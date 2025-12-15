@@ -3,7 +3,7 @@ import { Transaction } from '@mysten/sui/transactions';
 import { useState } from 'react';
 import AIWorkout from './AIWorkout';
 
-const PACKAGE_ID = "0x8e08f9385a803f6e6034f49093498f889f95398dfaeae854895b47b729167192";
+const PACKAGE_ID = "0xbc9781277e12207959d452f2fcf412dc7cdba9717ea215f97cca72d0dba3de06";
 
 function App() {
   const account = useCurrentAccount();
