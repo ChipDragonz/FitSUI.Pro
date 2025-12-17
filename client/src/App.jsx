@@ -4,10 +4,11 @@ import { useGame } from './hooks/useGame';
 import HeroSelector from './components/HeroSelector';
 import HeroCard from './components/HeroCard';
 import AIWorkout from './components/AIWorkout';
-import { Dumbbell, Activity, Trophy, Package, Store, Wallet } from 'lucide-react';
+import { Dumbbell, Activity, Trophy, Package, Store } from 'lucide-react';
 
 function App() {
-  const { account, heroes, mintHero, workout } = useGame();
+  // 👇 QUAN TRỌNG: Đã lấy nextMintTime ra ở đây để tránh lỗi màn hình trắng
+  const { account, heroes, mintHero, workout, nextMintTime } = useGame();
   
   const [activeTab, setActiveTab] = useState('heroes');
   const [selectedHeroId, setSelectedHeroId] = useState('');
@@ -69,17 +70,11 @@ function App() {
               </div>
             )}
 
-            {/* Connect Button - NAVBAR (Màu sáng rực rỡ) */}
+            {/* Connect Button - NAVBAR */}
             <div className="flex items-center gap-4">
               <ConnectButton 
-                connectText="Connect Wallet"
-                className="
-                  !bg-gradient-to-r !from-blue-600 !to-indigo-600 
-                  !text-white !font-bold !rounded-xl 
-                  !px-6 !py-3 !transition-all !duration-300
-                  hover:!shadow-[0_0_20px_rgba(37,99,235,0.6)] hover:!scale-105
-                  !border-none
-                " 
+                connectText="Kết Nối Ví"
+                className="!bg-gradient-to-r !from-blue-600 !to-indigo-600 !text-white !font-bold !rounded-xl !px-6 !py-3 !transition-all !duration-300 hover:!shadow-[0_0_20px_rgba(37,99,235,0.6)] hover:!scale-105 !border-none" 
               />
             </div>
           </div>
@@ -105,31 +100,21 @@ function App() {
               Biến mồ hôi thành tài sản kỹ thuật số. Sử dụng AI để theo dõi quá trình tập luyện ngay trên trình duyệt.
             </p>
             
-            {/* 👇 NÚT KẾT NỐI TO Ở GIỮA (THAY THẾ TEXT CŨ) */}
+            {/* NÚT KẾT NỐI TO */}
             <div className="pt-8 flex justify-center">
               <div className="relative group">
-                {/* Hiệu ứng nền glow phía sau */}
                 <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-2xl blur opacity-70 group-hover:opacity-100 transition duration-1000 group-hover:duration-200"></div>
-                
-                {/* Nút Connect chính */}
                 <div className="relative">
                   <ConnectButton 
-                    connectText="🚀 KẾT NỐI VÍ SUI ĐỂ BẮT ĐẦU NGAY"
-                    className="
-                      !bg-slate-900 !text-white !text-xl !font-black !tracking-wide
-                      !px-10 !py-6 !rounded-2xl
-                      !border !border-white/10
-                      hover:!bg-slate-800 transition-all
-                      flex items-center gap-3
-                    "
+                    connectText="🚀 KẾT NỐI VÍ ĐỂ BẮT ĐẦU NGAY"
+                    className="!bg-slate-900 !text-white !text-xl !font-black !tracking-wide !px-10 !py-6 !rounded-2xl !border !border-white/10 hover:!bg-slate-800 transition-all flex items-center gap-3"
                   />
                 </div>
               </div>
             </div>
-
           </div>
         ) : (
-          // NỘI DUNG CHÍNH (ĐÃ LOGIN) - GIỮ NGUYÊN
+          // NỘI DUNG CHÍNH (ĐÃ LOGIN)
           <div className="animate-fade-in">
             {activeTab === 'heroes' && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -137,15 +122,16 @@ function App() {
                   <div className="bg-white/5 border border-white/10 rounded-3xl p-6 backdrop-blur-md shadow-2xl">
                     <div className="flex items-center gap-2 mb-6 border-b border-white/5 pb-4">
                        <Trophy className="w-5 h-5 text-yellow-500" />
-                       <h2 className="text-lg font-bold text-white uppercase tracking-wider">Hero Selection</h2>
+                       <h2 className="text-lg font-bold text-white uppercase tracking-wider">Fighter Selection</h2>
                     </div>
                     
+                    {/* 👇 Đã truyền nextMintTime vào đây */}
                     <HeroSelector 
                       heroes={heroes} 
                       selectedId={currentHeroId} 
                       onSelect={setSelectedHeroId} 
-                      // Đã sửa hàm gọi mint
                       onMint={() => mintHero()} 
+                      nextMintTime={nextMintTime} 
                     />
                     
                     <div className="mt-8">
@@ -193,7 +179,7 @@ function App() {
               </div>
             )}
 
-            {/* TAB INVENTORY & MARKET (GIỮ NGUYÊN NHƯ CŨ) */}
+            {/* CÁC TAB KHÁC */}
             {activeTab === 'inventory' && (
               <div className="flex flex-col items-center justify-center py-20 bg-white/5 rounded-3xl border border-white/10 text-center">
                 <Package className="w-24 h-24 text-purple-500/20 mb-6" />

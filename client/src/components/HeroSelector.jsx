@@ -1,56 +1,82 @@
-import React from 'react';
-import { ChevronDown, UserPlus } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronDown, UserPlus, Clock } from 'lucide-react';
 
-const HeroSelector = ({ heroes, selectedId, onSelect, onMint }) => {
-  
-  // Trường hợp chưa có Hero
-  if (heroes.length === 0) {
-    return (
-      <div className="text-center p-8 bg-white/5 rounded-2xl border border-dashed border-white/20 backdrop-blur-sm">
-        <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-          <UserPlus className="w-8 h-8 text-blue-400" />
-        </div>
-        <h3 className="text-lg font-bold text-white mb-2">Chưa có nhân vật</h3>
-        <p className="text-gray-400 text-sm mb-6">Tạo ngay một chiến binh để bắt đầu hành trình!</p>
-        <button 
-          onClick={onMint}
-          className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 transition-all active:scale-95"
-        >
-          + MINT HERO MIỄN PHÍ
-        </button>
-      </div>
-    );
-  }
+const HeroSelector = ({ heroes, selectedId, onSelect, onMint, nextMintTime }) => {
+  const [timeLeft, setTimeLeft] = useState('');
+  const [isLocked, setIsLocked] = useState(false);
 
-  // Trường hợp đã có Hero -> Dropdown đẹp
+  // Logic đếm ngược
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      if (nextMintTime > now) {
+        setIsLocked(true);
+        const diff = nextMintTime - now;
+        
+        const h = Math.floor(diff / (1000 * 60 * 60));
+        const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const s = Math.floor((diff % (1000 * 60)) / 1000);
+        
+        // Format số đẹp (01, 02...)
+        const f = (n) => n.toString().padStart(2, '0');
+        setTimeLeft(`${f(h)}:${f(m)}:${f(s)}`);
+      } else {
+        setIsLocked(false);
+        setTimeLeft('');
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [nextMintTime]);
+
   return (
-    <div className="relative mb-6">
-      <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">
-        Chọn nhân vật
-      </label>
-      <div className="relative">
-        <select 
-          value={selectedId} 
-          onChange={(e) => onSelect(e.target.value)}
-          className="w-full appearance-none bg-black/40 border border-white/10 text-white pl-4 pr-10 py-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 cursor-pointer font-bold transition-all hover:bg-black/60"
-        >
-          {heroes.map((h) => (
-            <option key={h.data.objectId} value={h.data.objectId} className="bg-gray-900 text-white">
-              {h.data.content.fields.name} (Lv.{h.data.content.fields.level})
-            </option>
-          ))}
-        </select>
-        <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-gray-400">
-          <ChevronDown className="w-5 h-5" />
+    <div className="space-y-4">
+      {/* DROPDOWN CHỌN HERO */}
+      <div className="relative group">
+        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">
+          Chọn nhân vật
+        </label>
+        <div className="relative">
+          <select
+            value={selectedId}
+            onChange={(e) => onSelect(e.target.value)}
+            className="w-full appearance-none bg-black/40 border border-white/10 text-white rounded-xl px-4 py-3 pr-10 font-bold focus:outline-none focus:border-blue-500 transition-colors cursor-pointer"
+          >
+            {heroes.map((h) => (
+              <option key={h.data.objectId} value={h.data.objectId} className="bg-slate-900">
+                {h.data.content.fields.name} (Lv.{h.data.content.fields.level})
+              </option>
+            ))}
+            {heroes.length === 0 && <option>Chưa có Hero nào</option>}
+          </select>
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+            <ChevronDown className="w-5 h-5" />
+          </div>
         </div>
       </div>
-      
-      {/* Nút Mint nhỏ bên dưới nếu muốn mint thêm */}
-      <button 
+
+      {/* NÚT MINT HOẶC ĐỒNG HỒ ĐẾM NGƯỢC */}
+      <button
         onClick={onMint}
-        className="mt-4 w-full py-2 px-4 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2"
+        disabled={isLocked}
+        className={`
+          w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all duration-300
+          ${isLocked 
+            ? 'bg-slate-800/50 text-gray-400 border border-white/5 cursor-not-allowed' 
+            : 'bg-white/5 hover:bg-white/10 text-blue-400 border border-blue-500/30 hover:border-blue-500 hover:shadow-[0_0_15px_rgba(59,130,246,0.3)]'}
+        `}
       >
-        <UserPlus className="w-4 h-4" /> Mint thêm Hero khác
+        {isLocked ? (
+          <>
+            <Clock className="w-4 h-4 animate-pulse" />
+            <span>Hồi chiêu: <span className="text-white font-mono">{timeLeft}</span></span>
+          </>
+        ) : (
+          <>
+            <UserPlus className="w-4 h-4" />
+            <span>Mint thêm Hero khác</span>
+          </>
+        )}
       </button>
     </div>
   );

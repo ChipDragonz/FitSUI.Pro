@@ -1,17 +1,65 @@
-import { useSignAndExecuteTransaction, useSuiClientQuery, useCurrentAccount } from '@mysten/dapp-kit';
+import { useSignAndExecuteTransaction, useSuiClientQuery, useCurrentAccount, useSuiClient } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
 import { PACKAGE_ID, GAME_INFO_ID, CLOCK_ID } from '../utils/constants';
-// 👇 Import useToast
 import { useToast } from '../context/ToastContext';
+import { useState, useEffect } from 'react';
 
 export const useGame = () => {
+  const client = useSuiClient();
   const account = useCurrentAccount();
   const { mutate: signAndExecute } = useSignAndExecuteTransaction();
+  const toast = useToast();
   
-  // 👇 Khởi tạo Toast
-  const toast = useToast(); 
+  // State lưu thời gian được phép mint tiếp theo
+  const [nextMintTime, setNextMintTime] = useState(0);
 
-  // 1. Tự động lấy danh sách Hero của user
+  // 👇 HÀM CHECK COOLDOWN (ĐÃ SỬA LOGIC LẤY TABLE ID)
+  const checkCooldown = async () => {
+    if (!account) return;
+    try {
+      // BƯỚC 1: Lấy thông tin GameInfo để tìm ID của bảng 'minters'
+      const gameInfoObj = await client.getObject({
+        id: GAME_INFO_ID,
+        options: { showContent: true }
+      });
+
+      // Lấy ID của bảng (Table ID) nằm trong field 'minters'
+      const mintersTableId = gameInfoObj.data?.content?.fields?.minters?.fields?.id?.id;
+      
+      if (!mintersTableId) {
+        console.warn("Không tìm thấy bảng Minters!");
+        return;
+      }
+
+      // BƯỚC 2: Query vào bảng 'minters' bằng ID vừa lấy
+      const result = await client.getDynamicFieldObject({
+        parentId: mintersTableId, // Dùng Table ID (Chuẩn)
+        name: { type: 'address', value: account.address }
+      });
+      
+      // Nếu tìm thấy, lấy timestamp cũ + 24h (86400000ms)
+      if (result.data?.content?.fields?.value) {
+        const lastMintTime = parseInt(result.data.content.fields.value);
+        const unlockTime = lastMintTime + 86400000;
+        
+        console.log("⏳ Tìm thấy lịch sử Mint:", new Date(lastMintTime).toLocaleString());
+        console.log("🔓 Mở khóa lúc:", new Date(unlockTime).toLocaleString());
+        
+        setNextMintTime(unlockTime);
+      }
+    } catch (e) {
+      // Nếu lỗi (do chưa mint bao giờ) -> Cho phép mint (Time = 0)
+      console.log("✨ Chưa từng mint Hero nào (hoặc chưa tìm thấy trong bảng)");
+      setNextMintTime(0);
+    }
+  };
+
+  // Tự động check khi login hoặc khi reload
+  useEffect(() => {
+    checkCooldown();
+  }, [account]);
+
+  // Lấy danh sách Hero
   const { data: heroData, refetch } = useSuiClientQuery(
     'getOwnedObjects',
     {
@@ -19,46 +67,44 @@ export const useGame = () => {
       filter: { StructType: `${PACKAGE_ID}::game::Hero` },
       options: { showContent: true },
     },
-    { 
-      enabled: !!account,
-      refetchInterval: 5000 
-    }
+    { enabled: !!account, refetchInterval: 5000 }
   );
 
-  // 2. Hàm Mint Hero (Có xử lý thông báo đẹp)
+  // Hàm Mint Hero
   const mintHero = (onSuccess) => {
     const txb = new Transaction();
     txb.moveCall({
       target: `${PACKAGE_ID}::game::create_hero`,
       arguments: [
-        txb.pure.string('HeroFighter'), // Tên Hero
-        txb.pure.u8(0),                // Hệ (0 = Fire)
-        txb.object(GAME_INFO_ID),      // Game Info
-        txb.object(CLOCK_ID)           // Clock (để check 24h)
+        txb.pure.string('SuiFighter'), 
+        txb.pure.u8(0), 
+        txb.object(GAME_INFO_ID),
+        txb.object(CLOCK_ID)
       ],
     });
 
     signAndExecute({ transaction: txb }, {
       onSuccess: (result) => {
-        // 👇 Thay alert bằng toast xanh
-        toast.success('✅ Đã triệu hồi Chiến binh thành công!');
-        setTimeout(refetch, 1000); 
+        toast.success('✅ Triệu hồi thành công!');
+        setTimeout(() => {
+          refetch();
+          checkCooldown(); // Update lại đồng hồ ngay
+        }, 1000);
         onSuccess?.(result);
       },
       onError: (err) => {
-        console.error("Lỗi Mint:", err);
-        
-        // 👇 Xử lý lỗi 24h (Mã lỗi 4 hoặc MoveAbort)
+        console.error("Lỗi:", err);
         if (err.message.includes("4") || err.message.includes("MoveAbort")) {
-           toast.error("⏳ Hôm nay bạn đã nhận Hero rồi! Quay lại sau 24h nhé.");
+           toast.error("⏳ Vẫn đang trong thời gian hồi chiêu!");
+           checkCooldown(); // Check lại cho chắc
         } else {
-           toast.error('❌ Giao dịch thất bại. Vui lòng thử lại.');
+           toast.error('❌ Giao dịch thất bại.');
         }
       },
     });
   };
 
-  // 3. Hàm Workout (Có xử lý thông báo đẹp)
+  // Hàm Workout
   const workout = (heroId, onSuccess) => {
     const txb = new Transaction();
     txb.moveCall({
@@ -72,22 +118,14 @@ export const useGame = () => {
 
     signAndExecute({ transaction: txb }, {
       onSuccess: (result) => {
-        // 👇 Thay alert bằng toast xanh
         toast.success('💪 Tập luyện thành công! +XP');
         setTimeout(refetch, 1000);
         onSuccess?.(result);
       },
       onError: (err) => {
-        console.error("Lỗi Workout:", err);
-        
-        // 👇 Xử lý lỗi Hết thể lực hoặc Hồi chiêu
-        if(err.message.includes("2")) {
-           toast.error("😫 Hết thể lực! Hãy nghỉ ngơi chút nhé.");
-        } else if (err.message.includes("3")) {
-           toast.error("⏳ Đang hồi chiêu! Đừng tập gấp quá.");
-        } else {
-           toast.error('❌ Lỗi không xác định.');
-        }
+        if(err.message.includes("2")) toast.error("😫 Hết thể lực!");
+        else if (err.message.includes("3")) toast.error("⏳ Đang hồi thể lực!");
+        else toast.error('❌ Lỗi không xác định.');
       }
     });
   };
@@ -97,6 +135,7 @@ export const useGame = () => {
     heroes: heroData?.data || [],
     mintHero,
     workout,
+    nextMintTime, // Xuất biến này ra để UI dùng
     refetch 
   };
 };
