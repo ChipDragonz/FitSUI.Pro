@@ -1,141 +1,216 @@
-import { ConnectButton, useCurrentAccount, useSignAndExecuteTransaction, useSuiClientQuery } from '@mysten/dapp-kit';
-import { Transaction } from '@mysten/sui/transactions';
+import { ConnectButton } from '@mysten/dapp-kit';
 import { useState } from 'react';
-import AIWorkout from './AIWorkout';
-
-// ================= CẤU HÌNH (ĐIỀN CÁI MỚI VÀO ĐÂY) =================
-const PACKAGE_ID = "0x27b0338edaa780aeae89bd7fdb6f624d0b4f39ea001aaa1f6b54ad8991fe1712";
-const GAME_INFO_ID = "0x85d13453702597c075f249f2472eed9df90dfd7ef4c94f9c04b19f6df2a6570d"; 
-const CLOCK_ID = "0x6"; // Mặc định của SUI, không cần sửa
-// ===================================================================
+import { useGame } from './hooks/useGame';
+import HeroSelector from './components/HeroSelector';
+import HeroCard from './components/HeroCard';
+import AIWorkout from './components/AIWorkout';
+import { Dumbbell, Activity, Trophy, Package, Store, Wallet } from 'lucide-react';
 
 function App() {
-  const account = useCurrentAccount();
-  const { mutate: signAndExecute } = useSignAndExecuteTransaction();
-  const [digest, setDigest] = useState('');
-  const [manualSelection, setManualSelection] = useState(''); 
+  const { account, heroes, mintHero, workout } = useGame();
+  
+  const [activeTab, setActiveTab] = useState('heroes');
+  const [selectedHeroId, setSelectedHeroId] = useState('');
 
-  // Tự động tìm Hero
-  const { data: userObjects, refetch: refetchHeroes } = useSuiClientQuery(
-    'getOwnedObjects',
-    {
-      owner: account?.address,
-      filter: { StructType: `${PACKAGE_ID}::game::Hero` },
-      options: { showContent: true },
-    },
-    { enabled: !!account }
-  );
+  const currentHeroId = selectedHeroId || (heroes.length > 0 ? heroes[0].data.objectId : '');
+  const currentHero = heroes.find(h => h.data.objectId === currentHeroId);
 
-  const currentHeroId = manualSelection || (userObjects?.data?.[0]?.data?.objectId) || '';
-
-  // 1. MINT HERO MỚI
-  const mintHero = () => {
-    const txb = new Transaction();
-    txb.moveCall({
-      target: `${PACKAGE_ID}::game::create_hero`,
-      arguments: [
-        txb.pure.string('SuiFighter'), // Tên Hero
-        txb.object(GAME_INFO_ID)       // Phải truyền Luật chơi vào
-      ],
-    });
-
-    signAndExecute({ transaction: txb }, {
-        onSuccess: (result) => {
-          alert('✅ Đã tạo Hero mới!');
-          setDigest(result.digest);
-          setTimeout(() => refetchHeroes(), 2000); 
-        },
-        onError: (err) => alert('Lỗi: ' + err.message),
-    });
-  };
-
-  // 2. WORKOUT (ĐÃ NÂNG CẤP)
-  const submitWorkout = () => {
-    if (!currentHeroId) return alert("Không tìm thấy Hero!");
-    
-    const txb = new Transaction();
-    txb.moveCall({
-      target: `${PACKAGE_ID}::game::workout`,
-      arguments: [
-        txb.object(currentHeroId), // 1. Hero
-        txb.object(GAME_INFO_ID),  // 2. Luật chơi (GameInfo)
-        txb.object(CLOCK_ID)       // 3. Đồng hồ (Clock)
-      ],
-    });
-
-    signAndExecute({ transaction: txb }, {
-        onSuccess: (result) => {
-          console.log('Success:', result);
-          setDigest(result.digest);
-          alert('💪 TẬP THÀNH CÔNG! (XP đã tăng, kiểm tra Explorer)');
-        },
-        onError: (err) => {
-          // Nếu lỗi chứa code "2", nghĩa là đang Cooldown
-          if(err.message.includes("2")) {
-             alert("⏳ TỪ TỪ THÔI! Đang hồi chiêu (Cooldown 5s)");
-          } else {
-             alert('Lỗi: ' + err.message);
-          }
-        },
-    });
-  };
+  const navItems = [
+    { id: 'heroes', label: 'Kho Hero', icon: Trophy },
+    { id: 'inventory', label: 'Kho Đồ', icon: Package },
+    { id: 'market', label: 'Giao Dịch', icon: Store },
+  ];
 
   return (
-    <div style={{ padding: 20, textAlign: 'center', fontFamily: 'Arial' }}>
-      <h1>🏋️‍♂️ FitSui Pro - Move To Earn</h1>
-      <div style={{ marginBottom: 20 }}> <ConnectButton /> </div>
+    <div className="min-h-screen font-sans selection:bg-blue-500/30 text-white">
+      
+      {/* --- NAVBAR --- */}
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-slate-900/80 backdrop-blur-md border-b border-white/5">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-20">
+            {/* Logo */}
+            <div 
+              className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => setActiveTab('heroes')}
+            >
+              <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-2.5 rounded-xl shadow-lg shadow-blue-500/20">
+                <Dumbbell className="text-white w-6 h-6" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400 tracking-tight leading-none">
+                  FitSui<span className="text-blue-500">.Pro</span>
+                </h1>
+                <p className="text-[10px] text-gray-400 font-bold tracking-widest uppercase">Move to Earn</p>
+              </div>
+            </div>
 
-      {!account ? (
-        <p>Kết nối ví để bắt đầu!</p>
-      ) : (
-        <div>
-           {/* KHU VỰC CHỌN HERO */}
-<div style={{ padding: 15, background: '#e3f2fd', borderRadius: 10, margin: '20px auto', maxWidth: 500 }}>
-    <h3>Nhân vật của bạn</h3>
-    
-    {userObjects?.data?.length > 0 ? (
-    // TRƯỜNG HỢP 1: ĐÃ CÓ HERO
-    <>
-        <select 
-            style={{ padding: 10, fontSize: 16, width: '100%' }}
-            onChange={(e) => setManualSelection(e.target.value)}
-            value={currentHeroId}
-        >
-            {userObjects.data.map((obj, index) => (
-            <option key={obj.data.objectId} value={obj.data.objectId}>
-                🦸‍♂️ Hero #{index + 1} ({obj.data.objectId.slice(0, 5)}...)
-            </option>
-            ))}
-        </select>
-        {/* Đã có Hero rồi thì ẩn nút Mint đi, hoặc disable nó */}
-        <p style={{color: 'green', fontWeight: 'bold'}}>✅ Bạn đã sở hữu Chiến Binh!</p>
-    </>
-    ) : (
-    // TRƯỜNG HỢP 2: CHƯA CÓ HERO -> HIỆN NÚT MINT
-    <>
-        <p>Chưa có nhân vật.</p>
-        <button onClick={mintHero} style={{ marginTop: 10, padding: '8px 20px', background: '#4CAF50', color: 'white', border: 'none', borderRadius: 5, cursor: 'pointer' }}>
-        + Mint Hero Mới
-        </button>
-    </>
-    )}
-</div>
+            {/* Menu Giữa */}
+            {account && (
+              <div className="hidden md:flex bg-white/5 p-1 rounded-xl border border-white/10 backdrop-blur-sm">
+                {navItems.map((item) => {
+                  const isActive = activeTab === item.id;
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setActiveTab(item.id)}
+                      className={`
+                        flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm transition-all duration-300
+                        ${isActive 
+                          ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
+                          : 'text-gray-400 hover:text-white hover:bg-white/5'}
+                      `}
+                    >
+                      <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-gray-500'}`} />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-           {/* AI CAMERA */}
-           {currentHeroId && (
-             <div style={{ marginBottom: 30 }}>
-                <AIWorkout onWorkoutComplete={(count) => {
-                   if(count === 3) {
-                      // alert("🎉 HOÀN THÀNH! Đang gửi lên Blockchain...");
-                      submitWorkout();
-                   }
-                }} />
-             </div>
-           )}
-
-           <div style={{ marginTop: 20, fontSize: 12, color: 'gray' }}>{digest && <p>Tx: {digest}</p>}</div>
+            {/* Connect Button - NAVBAR (Màu sáng rực rỡ) */}
+            <div className="flex items-center gap-4">
+              <ConnectButton 
+                connectText="Connect Wallet"
+                className="
+                  !bg-gradient-to-r !from-blue-600 !to-indigo-600 
+                  !text-white !font-bold !rounded-xl 
+                  !px-6 !py-3 !transition-all !duration-300
+                  hover:!shadow-[0_0_20px_rgba(37,99,235,0.6)] hover:!scale-105
+                  !border-none
+                " 
+              />
+            </div>
+          </div>
         </div>
-      )}
+      </nav>
+
+      {/* --- MAIN CONTENT --- */}
+      <main className="pt-32 pb-12 px-4 max-w-7xl mx-auto">
+        
+        {!account ? (
+          // MÀN HÌNH CHÀO (CHƯA LOGIN)
+          <div className="text-center mt-20 space-y-8 animate-fade-in-up">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 font-bold text-sm uppercase tracking-wider mb-4">
+              <Activity className="w-4 h-4" /> Next Gen Web3 Fitness
+            </div>
+            <h1 className="text-6xl md:text-8xl font-black text-white leading-tight tracking-tight">
+              Train hard. <br/> 
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500">
+                Get paid.
+              </span>
+            </h1>
+            <p className="text-xl text-gray-400 max-w-2xl mx-auto leading-relaxed">
+              Biến mồ hôi thành tài sản kỹ thuật số. Sử dụng AI để theo dõi quá trình tập luyện ngay trên trình duyệt.
+            </p>
+            
+            {/* 👇 NÚT KẾT NỐI TO Ở GIỮA (THAY THẾ TEXT CŨ) */}
+            <div className="pt-8 flex justify-center">
+              <div className="relative group">
+                {/* Hiệu ứng nền glow phía sau */}
+                <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-2xl blur opacity-70 group-hover:opacity-100 transition duration-1000 group-hover:duration-200"></div>
+                
+                {/* Nút Connect chính */}
+                <div className="relative">
+                  <ConnectButton 
+                    connectText="🚀 KẾT NỐI VÍ SUI ĐỂ BẮT ĐẦU NGAY"
+                    className="
+                      !bg-slate-900 !text-white !text-xl !font-black !tracking-wide
+                      !px-10 !py-6 !rounded-2xl
+                      !border !border-white/10
+                      hover:!bg-slate-800 transition-all
+                      flex items-center gap-3
+                    "
+                  />
+                </div>
+              </div>
+            </div>
+
+          </div>
+        ) : (
+          // NỘI DUNG CHÍNH (ĐÃ LOGIN) - GIỮ NGUYÊN
+          <div className="animate-fade-in">
+            {activeTab === 'heroes' && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <div className="lg:col-span-4 space-y-6">
+                  <div className="bg-white/5 border border-white/10 rounded-3xl p-6 backdrop-blur-md shadow-2xl">
+                    <div className="flex items-center gap-2 mb-6 border-b border-white/5 pb-4">
+                       <Trophy className="w-5 h-5 text-yellow-500" />
+                       <h2 className="text-lg font-bold text-white uppercase tracking-wider">Hero Selection</h2>
+                    </div>
+                    
+                    <HeroSelector 
+                      heroes={heroes} 
+                      selectedId={currentHeroId} 
+                      onSelect={setSelectedHeroId} 
+                      // Đã sửa hàm gọi mint
+                      onMint={() => mintHero()} 
+                    />
+                    
+                    <div className="mt-8">
+                      {currentHero ? <HeroCard hero={currentHero.data} /> : (
+                         <div className="aspect-[3/4] rounded-2xl border-2 border-dashed border-white/10 flex flex-col items-center justify-center text-gray-500 bg-black/20">
+                           <p>Chưa chọn nhân vật</p>
+                         </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-8">
+                  <div className="bg-white/5 border border-white/10 rounded-3xl p-1 backdrop-blur-md shadow-2xl h-full flex flex-col">
+                    <div className="p-6 pb-4 flex justify-between items-end">
+                      <div>
+                        <h2 className="text-3xl font-black text-white italic tracking-tighter">TRAINING ZONE</h2>
+                        <p className="text-gray-400 font-medium flex items-center gap-2 mt-1 text-sm">
+                          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                          AI Camera System Online
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Daily Mission</p>
+                        <div className="bg-blue-500/10 border border-blue-500/20 px-3 py-1 rounded-lg">
+                          <p className="text-xl font-black text-blue-400">3 SQUATS</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 p-4">
+                      <div className="w-full h-full rounded-2xl overflow-hidden bg-black shadow-inner border border-white/5 relative group min-h-[500px]">
+                        {currentHero ? (
+                          <AIWorkout onWorkoutComplete={(count) => { if (count === 3) workout(currentHeroId); }} />
+                        ) : (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-600 bg-black/80">
+                            <Dumbbell className="w-24 h-24 mb-6 opacity-20" />
+                            <p className="text-xl font-bold text-gray-400">Chọn Hero để mở khóa Camera</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB INVENTORY & MARKET (GIỮ NGUYÊN NHƯ CŨ) */}
+            {activeTab === 'inventory' && (
+              <div className="flex flex-col items-center justify-center py-20 bg-white/5 rounded-3xl border border-white/10 text-center">
+                <Package className="w-24 h-24 text-purple-500/20 mb-6" />
+                <h2 className="text-3xl font-black text-white mb-2">Kho Vật Phẩm</h2>
+                <button className="px-6 py-3 bg-white/10 rounded-xl font-bold text-gray-400 cursor-not-allowed mt-4">🚧 Đang phát triển</button>
+              </div>
+            )}
+            {activeTab === 'market' && (
+              <div className="flex flex-col items-center justify-center py-20 bg-white/5 rounded-3xl border border-white/10 text-center">
+                <Store className="w-24 h-24 text-green-500/20 mb-6" />
+                <h2 className="text-3xl font-black text-white mb-2">Chợ Giao Dịch</h2>
+                <button className="px-6 py-3 bg-white/10 rounded-xl font-bold text-gray-400 cursor-not-allowed mt-4">Coming Soon</button>
+              </div>
+            )}
+          </div>
+        )}
+      </main>
     </div>
   );
 }
