@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 // --- IMPORT ẢNH ---
 import bodyImg from '../assets/body.png';
-import headImg from '../assets/head.png';         // Ảnh đầu mới thêm
+import headImg from '../assets/head.png';
 import armorImg from '../assets/fire_armor.png';
 import helmetImg from '../assets/fire_helmet.png';
 import swordImg from '../assets/fire_sword.png';
@@ -11,8 +11,8 @@ import swordImg from '../assets/fire_sword.png';
 // --- CẤU HÌNH ASSETS ---
 const ASSETS = {
   base: {
-    male: bodyImg,   // Cơ thể toàn vẹn (dùng khi không mặc gì)
-    head: headImg,   // Chỉ cái đầu (dùng khi mặc giáp)
+    male: bodyImg,
+    head: headImg,
   },
   outfit: {
     none: null, 
@@ -33,7 +33,7 @@ const AvatarLayer = ({ src, zIndex, layerName }) => {
 
   return (
     <motion.img
-      key={layerName + (src || 'none')}
+      // Lưu ý: Key đã được đưa ra ngoài component cha, ở đây chỉ cần animate
       src={src}
       alt={layerName}
       initial={{ opacity: 0 }}
@@ -43,7 +43,6 @@ const AvatarLayer = ({ src, zIndex, layerName }) => {
       className="absolute inset-0 w-full h-full object-contain pointer-events-none"
       style={{ 
         zIndex, 
-        // Vũ khí và Giáp đổ bóng đậm hơn chút để nổi bật
         filter: (layerName === 'weapon' || layerName === 'outfit') 
           ? "drop-shadow(0 5px 5px rgba(0,0,0,0.6))" 
           : "none" 
@@ -59,39 +58,66 @@ const HeroAvatar = ({ equipment }) => {
   const currentHatUrl = ASSETS.hat[equip.hat];
   const currentWeaponUrl = ASSETS.weapon[equip.weapon];
 
-  // LOGIC CHUYỂN ĐỔI BODY/HEAD
   const hasOutfit = equip.outfit && equip.outfit !== 'none';
 
   return (
     <div className="relative w-full h-full flex items-end justify-center overflow-hidden rounded-2xl">
       
-      {/* Hiệu ứng nền lửa */}
+      {/* Hiệu ứng nền */}
       <div className="absolute top-[40%] left-1/2 -translate-x-1/2 w-3/4 h-3/4 bg-orange-600/20 blur-[90px] rounded-full mix-blend-screen animate-pulse" />
 
       <div className="relative w-full h-[92%] transition-transform duration-500 hover:scale-105">
+        
+        {/* QUAN TRỌNG: Đặt key rõ ràng cho từng AvatarLayer tại đây */}
         <AnimatePresence mode='wait'>
           
-          {/* TRƯỜNG HỢP 1: KHÔNG MẶC GIÁP -> Hiện Body gốc (Z:10) */}
+          {/* TRƯỜNG HỢP 1: KHÔNG MẶC GIÁP */}
           {!hasOutfit && (
-            <AvatarLayer src={ASSETS.base.male} zIndex={10} layerName="baseBody" />
+            <AvatarLayer 
+              key="base-body-layer"  // <--- KEY DUY NHẤT
+              src={ASSETS.base.male} 
+              zIndex={10} 
+              layerName="baseBody" 
+            />
           )}
 
-          {/* TRƯỜNG HỢP 2: CÓ MẶC GIÁP -> Hiện Đầu riêng (Z:15) + Giáp (Z:20) */}
+          {/* TRƯỜNG HỢP 2: CÓ MẶC GIÁP */}
           {hasOutfit && (
-            <>
-              {/* Đầu nằm dưới giáp một chút để cổ không bị đè lên cổ áo */}
-              <AvatarLayer src={ASSETS.base.head} zIndex={20} layerName="baseHead" />
-              <AvatarLayer src={currentOutfitUrl} zIndex={15} layerName="outfit" />
-            </>
+            <React.Fragment key="outfit-group"> {/* Bọc trong Fragment có key nếu cần, hoặc để key trực tiếp vào con */}
+              <AvatarLayer 
+                key="base-head-layer" // <--- KEY DUY NHẤT
+                src={ASSETS.base.head} 
+                zIndex={20} 
+                layerName="baseHead" 
+              />
+              <AvatarLayer 
+                key="outfit-layer"    // <--- KEY DUY NHẤT
+                src={currentOutfitUrl} 
+                zIndex={15} 
+                layerName="outfit" 
+              />
+            </React.Fragment>
           )}
-
-          {/* LỚP 3: KIẾM (Z:25) */}
-          <AvatarLayer src={currentWeaponUrl} zIndex={25} layerName="weapon" />
-
-          {/* LỚP 4: MŨ (Z:30) */}
-          <AvatarLayer src={currentHatUrl} zIndex={30} layerName="hat" />
 
         </AnimatePresence>
+
+        {/* CÁC LỚP LUÔN HIỆN (Không cần nằm trong AnimatePresence logic chuyển đổi body) */}
+        <AnimatePresence>
+            <AvatarLayer 
+                key="weapon-layer" 
+                src={currentWeaponUrl} 
+                zIndex={25} 
+                layerName="weapon" 
+            />
+            
+            <AvatarLayer 
+                key="hat-layer" 
+                src={currentHatUrl} 
+                zIndex={30} 
+                layerName="hat" 
+            />
+        </AnimatePresence>
+
       </div>
     </div>
   );

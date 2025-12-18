@@ -34,7 +34,7 @@ const HeroSelector = ({ heroes, selectedId, onSelect, onMint, nextMintTime }) =>
       {/* DROPDOWN CHỌN HERO */}
       <div className="relative group">
         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1 block">
-          Chọn nhân vật
+          SELECT HERO
         </label>
         <div className="relative">
           <select
@@ -55,29 +55,46 @@ const HeroSelector = ({ heroes, selectedId, onSelect, onMint, nextMintTime }) =>
         </div>
       </div>
 
-      {/* NÚT MINT HOẶC ĐỒNG HỒ ĐẾM NGƯỢC */}
-      <button
-        onClick={onMint}
-        disabled={isLocked}
-        className={`
-          w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all duration-300
-          ${isLocked 
-            ? 'bg-slate-800/50 text-gray-400 border border-white/5 cursor-not-allowed' 
-            : 'bg-white/5 hover:bg-white/10 text-blue-400 border border-blue-500/30 hover:border-blue-500 hover:shadow-[0_0_15px_rgba(59,130,246,0.3)]'}
-        `}
-      >
-        {isLocked ? (
-          <>
-            <Clock className="w-4 h-4 animate-pulse" />
-            <span>Hồi chiêu: <span className="text-white font-mono">{timeLeft}</span></span>
-          </>
-        ) : (
-          <>
-            <UserPlus className="w-4 h-4" />
-            <span>Mint thêm Hero khác</span>
-          </>
-        )}
-      </button>
+      {/* --- LOGIC HIỂN THỊ NÚT MINT / COUNTDOWN --- */}
+<div className="w-full mt-4">
+  {nextMintTime > Date.now() ? (
+    /* 1. TRẠNG THÁI ĐANG ĐỢI (COOLDOWN) */
+    <div className="flex flex-col items-center justify-center p-5 bg-white/5 border border-white/10 rounded-2xl cursor-not-allowed group relative overflow-hidden">
+      {/* Hiệu ứng tia sáng quét ngang nhẹ nhàng khi đang hồi */}
+      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-lime-500/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+      
+      <span className="text-[10px] font-black tracking-[0.4em] text-lime-500/60 uppercase mb-1 animate-pulse">
+        Next Mint In
+      </span>
+      
+      <div className="flex items-baseline gap-1">
+        <span className="text-2xl font-black text-white italic tracking-tighter">
+          {/* Tính số giờ còn lại */}
+          {Math.floor((nextMintTime - Date.now()) / 3600000)}
+        </span>
+        <span className="text-xs font-bold text-gray-500 uppercase">Hours</span>
+        
+        <span className="text-2xl font-black text-white italic tracking-tighter ml-2">
+          {/* Tính số phút còn lại */}
+          {Math.floor(((nextMintTime - Date.now()) % 3600000) / 60000)}
+        </span>
+        <span className="text-xs font-bold text-gray-500 uppercase">Min</span>
+      </div>
+      
+      <p className="text-[9px] text-gray-600 font-bold uppercase mt-2 tracking-widest">
+        Stamina recovering...
+      </p>
+    </div>
+  ) : (
+    /* 2. TRẠNG THÁI SẴN SÀNG MINT (TOXIC BUTTON) */
+    <button 
+      onClick={onMint}
+      className="w-full bg-gradient-to-r from-lime-400 to-emerald-600 p-4 rounded-2xl text-slate-950 font-black text-lg uppercase tracking-tighter hover:scale-[1.02] active:scale-95 transition-all shadow-[0_0_20px_rgba(163,230,53,0.3)]"
+    >
+      Mint New Fighter
+    </button>
+  )}
+</div>
     </div>
   );
 };
