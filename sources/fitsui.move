@@ -18,45 +18,25 @@ module fitsui::game {
     const BASE_MAX_STAMINA: u64 = 100;
 
     // --- CHỈ SỐ SỨC MẠNH CỐ ĐỊNH ---
-    const BONUS_COMMON: u64 = 2;    
-    const BONUS_RARE: u64 = 3;      
-    const BONUS_EPIC: u64 = 5;      
+    const BONUS_COMMON: u64 = 2;
     const BONUS_LEGENDARY: u64 = 10; 
 
     public struct AdminCap has key { id: UID }
 
     public struct GameInfo has key {
-        id: UID,
-        admin: address,
-        xp_per_workout: u64,
-        level_threshold: u64,
-        default_url: String, 
-        cooldown_ms: u64,
-        minters: Table<address, u64>, 
-        hero_count: u64, 
-        item_count: u64, 
+        id: UID, admin: address, xp_per_workout: u64, level_threshold: u64,
+        default_url: String, cooldown_ms: u64, minters: Table<address, u64>, 
+        hero_count: u64, item_count: u64, 
     }
 
     public struct Hero has key, store {
-        id: UID,
-        name: String,
-        level: u64,
-        xp: u64,
-        url: String,
-        stamina: u64,
-        strength: u64,
-        element: u8, 
-        last_update_timestamp: u64,
-        number: u64, 
+        id: UID, name: String, level: u64, xp: u64, url: String,
+        stamina: u64, strength: u64, element: u8, 
+        last_update_timestamp: u64, number: u64, 
     }
 
     public struct Item has key, store {
-        id: UID,
-        name: String,
-        part: u8,    
-        rarity: u8,  
-        bonus: u64,  
-        url: String, 
+        id: UID, name: String, part: u8, rarity: u8, bonus: u64, url: String, 
     }
 
     // --- EVENTS ---
@@ -65,22 +45,16 @@ module fitsui::game {
     public struct HeroLeveledUp has copy, drop { id: ID, owner: address, new_level: u64 }
     public struct HeroFused has copy, drop { id: ID, owner: address, new_level: u64 }
     public struct ItemDropped has copy, drop { hero_id: ID, item_id: ID, owner: address, rarity: u8 }
-    public struct ItemEquipped has copy, drop { hero_id: ID, item_id: ID, part: u8 }
+    public struct MonsterSlain has copy, drop { id: ID, monster_hp: u64, stamina_spent: u64 }
 
     fun init(ctx: &mut TxContext) {
         let sender = ctx.sender();
         transfer::transfer(AdminCap { id: object::new(ctx) }, sender);
         
         transfer::share_object(GameInfo {
-            id: object::new(ctx),
-            admin: sender,
-            xp_per_workout: 10,
-            level_threshold: 50,
+            id: object::new(ctx), admin: sender, xp_per_workout: 10, level_threshold: 50,
             default_url: string::utf8(b"https://beige-urgent-clam-163.mypinata.cloud/ipfs/bafkreihflrgixxfqxqb5s22kl47ausqu3ruigpx6izhynbg6ewbrjs4ti4"),
-            cooldown_ms: 5000, 
-            minters: table::new(ctx),
-            hero_count: 0, 
-            item_count: 0, 
+            cooldown_ms: 5000, minters: table::new(ctx), hero_count: 0, item_count: 0, 
         });
     }
 
@@ -119,97 +93,78 @@ module fitsui::game {
         total
     }
 
+    fun update_stamina_engine(hero: &mut Hero, clock: &Clock) {
+        let current_time = clock::timestamp_ms(clock);
+        let time_passed = current_time - hero.last_update_timestamp;
+        let stamina_regen = time_passed / STAMINA_REGEN_MS;
+        let max_stamina = get_max_stamina(hero.level);
+        if (stamina_regen > 0) {
+            hero.stamina = if (hero.stamina + stamina_regen > max_stamina) { max_stamina } 
+                          else { hero.stamina + stamina_regen };
+        };
+        hero.last_update_timestamp = current_time;
+    }
+
     // --- CORE LOGIC ---
 
     public entry fun create_hero(game_info: &mut GameInfo, clock: &Clock, ctx: &mut TxContext) {
         let sender = ctx.sender();
         let current_time = clock::timestamp_ms(clock);
-
         if (table::contains(&game_info.minters, sender)) {
             let last_mint = *table::borrow(&game_info.minters, sender);
             assert!(current_time >= last_mint + ONE_DAY_MS, E_MINT_COOLDOWN);
             table::remove(&mut game_info.minters, sender);
         };
         table::add(&mut game_info.minters, sender, current_time);
-
-        // 👇 LOGIC ĐẶT TÊN TỰ ĐỘNG THEO SỐ THỨ TỰ
         game_info.hero_count = game_info.hero_count + 1;
         let mut hero_name = string::utf8(b"Hero #");
         string::append(&mut hero_name, u64_to_string(game_info.hero_count));
-
         let hero = Hero {
-            id: object::new(ctx),
-            name: hero_name,
-            level: 0,
-            xp: 0,
-            url: game_info.default_url,
-            stamina: BASE_MAX_STAMINA, 
-            strength: 1, 
-            element: (clock::timestamp_ms(clock) % 5 as u8), 
-            last_update_timestamp: current_time,
-            number: game_info.hero_count,
+            id: object::new(ctx), name: hero_name, level: 0, xp: 0, url: game_info.default_url,
+            stamina: BASE_MAX_STAMINA, strength: 1, element: (clock::timestamp_ms(clock) % 5 as u8), 
+            last_update_timestamp: current_time, number: game_info.hero_count,
         };
-
-        event::emit(HeroCreated { 
-            id: object::uid_to_inner(&hero.id), 
-            owner: sender, 
-            name: hero.name, 
-            element: hero.element, 
-            number: hero.number 
-        });
-
+        event::emit(HeroCreated { id: object::uid_to_inner(&hero.id), owner: sender, name: hero.name, element: hero.element, number: hero.number });
         transfer::transfer(hero, sender);
     }
 
+    // ✅ LOGIC TẬP LUYỆN: 1 Set = 10 Stamina & XP = Strength x 10
     public entry fun workout(hero: &mut Hero, game_info: &mut GameInfo, clock: &Clock, multiplier: u64, ctx: &mut TxContext) {
-        let current_time = clock::timestamp_ms(clock);
-        let time_passed = current_time - hero.last_update_timestamp;
-        let stamina_regen = time_passed / STAMINA_REGEN_MS;
-        let max_stamina = get_max_stamina(hero.level);
+        update_stamina_engine(hero, clock);
+        let stamina_needed = 10 * multiplier;
+        assert!(hero.stamina >= stamina_needed, E_NO_STAMINA);
+        hero.stamina = hero.stamina - stamina_needed;
         
-        if (stamina_regen > 0) {
-            hero.stamina = if (hero.stamina + stamina_regen > max_stamina) { max_stamina } 
-                          else { hero.stamina + stamina_regen };
-        };
-
-        assert!(hero.stamina >= 10 * multiplier, E_NO_STAMINA);
-        hero.stamina = hero.stamina - (10 * multiplier);
-        
-        let xp_gain = (game_info.xp_per_workout + (hero.level * 3)) * multiplier; 
+        let total_str = get_total_strength(hero);
+        let xp_gain = (total_str * 10) * multiplier; 
         hero.xp = hero.xp + xp_gain;
-        hero.last_update_timestamp = current_time;
 
-        // Logic rơi đồ (Tạm thời để true để ní test)
-        let uid_temp = object::new(ctx);
-        if (true) { 
-            let rarity = 3; 
-            let bonus = BONUS_LEGENDARY;
-            let part = 6; 
-
-            game_info.item_count = game_info.item_count + 1;
-            let mut item_name = string::utf8(b"Sword #");
-            string::append(&mut item_name, u64_to_string(game_info.item_count));
-
-            let item = Item {
-                id: uid_temp,
-                name: item_name, 
-                part: (part as u8),
-                rarity: (rarity as u8),
-                bonus: bonus, 
-                url: string::utf8(b"https://beige-urgent-clam-163.mypinata.cloud/ipfs/bafkreiclj5dhzcotxdt7qzxkfkyjyamt6hlis2yh5ibrxxu6uajwuexqh4"),
-            };
-            
-            event::emit(ItemDropped { 
-                hero_id: object::uid_to_inner(&hero.id), 
-                item_id: object::uid_to_inner(&item.id), 
-                owner: ctx.sender(), 
-                rarity: item.rarity 
-            });
-            transfer::public_transfer(item, ctx.sender());
-        } else {
-            object::delete(uid_temp);
+        // Logic rơi đồ 100% (URL mới của ní)
+        let item_id = object::new(ctx);
+        game_info.item_count = game_info.item_count + 1;
+        let mut item_name = string::utf8(b"Sword #");
+        string::append(&mut item_name, u64_to_string(game_info.item_count));
+        let item = Item {
+            id: item_id, name: item_name, part: 6, rarity: 0, bonus: BONUS_COMMON,
+            url: string::utf8(b"https://beige-urgent-clam-163.mypinata.cloud/ipfs/bafkreiddvwlcdtomvha4hii3vhpghpr3bpmf5z6v6nozszysvkmwhckesi"),
         };
+        event::emit(ItemDropped { hero_id: object::uid_to_inner(&hero.id), item_id: object::uid_to_inner(&item.id), owner: ctx.sender(), rarity: 0 });
+        transfer::public_transfer(item, ctx.sender());
 
+        event::emit(WorkoutCompleted { id: object::uid_to_inner(&hero.id), owner: ctx.sender(), new_xp: hero.xp, new_stamina: hero.stamina });
+        check_level_up(hero, game_info, ctx);
+    }
+
+    // ✅ LOGIC SĂN QUÁI: Sức mạnh cao tiết kiệm Stamina
+    public entry fun slay_monster(hero: &mut Hero, game_info: &mut GameInfo, clock: &Clock, monster_hp: u64, ctx: &mut TxContext) {
+        update_stamina_engine(hero, clock);
+        let strength = get_total_strength(hero);
+        let hits_needed = (monster_hp + strength - 1) / strength;
+        assert!(hero.stamina >= hits_needed, E_NO_STAMINA);
+        hero.stamina = hero.stamina - hits_needed;
+        hero.xp = hero.xp + monster_hp;
+
+        event::emit(MonsterSlain { id: object::uid_to_inner(&hero.id), monster_hp, stamina_spent: hits_needed });
         check_level_up(hero, game_info, ctx);
     }
 
@@ -226,46 +181,24 @@ module fitsui::game {
 
     public entry fun fuse_heroes(h1: Hero, h2: Hero, h3: Hero, game_info: &mut GameInfo, clock: &Clock, ctx: &mut TxContext) {
         assert!(h1.element == h2.element && h1.level == h2.level && h2.level == h3.level, E_NOT_FUSIBLE);
-        
-        // Cập nhật tên mới cho Hero hợp thể
         game_info.hero_count = game_info.hero_count + 1;
         let mut fused_name = string::utf8(b"Hero #");
         string::append(&mut fused_name, u64_to_string(game_info.hero_count));
-
-        let fused_level = h1.level + 2;
+        let lv = h1.level + 2;
         let fused_hero = Hero {
-            id: object::new(ctx),
-            name: fused_name,
-            level: fused_level,
-            xp: 0,
-            url: h1.url,
-            stamina: get_max_stamina(fused_level),
-            strength: fused_level + 1, 
-            element: h1.element,
-            last_update_timestamp: clock::timestamp_ms(clock),
-            number: game_info.hero_count,
+            id: object::new(ctx), name: fused_name, level: lv, xp: 0, url: h1.url,
+            stamina: get_max_stamina(lv), strength: lv + 1, element: h1.element,
+            last_update_timestamp: clock::timestamp_ms(clock), number: game_info.hero_count,
         };
-
-        let Hero { id: id1, .. } = h1; 
-        let Hero { id: id2, .. } = h2; 
-        let Hero { id: id3, .. } = h3;
+        let Hero { id: id1, .. } = h1; let Hero { id: id2, .. } = h2; let Hero { id: id3, .. } = h3;
         object::delete(id1); object::delete(id2); object::delete(id3);
-        
-        event::emit(HeroFused { 
-            id: object::uid_to_inner(&fused_hero.id), 
-            owner: ctx.sender(), 
-            new_level: fused_level 
-        });
         transfer::transfer(fused_hero, ctx.sender());
     }
 
     public entry fun equip_multiple_items(hero: &mut Hero, mut items: vector<Item>, _ctx: &mut TxContext) {
-        let mut i = 0;
-        let len = vector::length(&items);
-        while (i < len) {
+        while (vector::length(&items) > 0) {
             let item = vector::remove(&mut items, 0);
             equip_item(hero, item, _ctx); 
-            i = i + 1;
         };
         vector::destroy_empty(items);
     }
@@ -277,12 +210,7 @@ module fitsui::game {
             hero.strength = hero.strength + 1;
             hero.stamina = get_max_stamina(hero.level);
             threshold = get_next_level_threshold(hero.level, game_info.level_threshold);
-            
-            event::emit(HeroLeveledUp { 
-                id: object::uid_to_inner(&hero.id), 
-                owner: _ctx.sender(), 
-                new_level: hero.level 
-            });
+            event::emit(HeroLeveledUp { id: object::uid_to_inner(&hero.id), owner: _ctx.sender(), new_level: hero.level });
         }
     }
 }

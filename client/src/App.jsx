@@ -105,20 +105,19 @@ useEffect(() => {
 
 
 
+// --- TRONG App.jsx ---
 const handleClaimFarmRewards = async () => {
-  // ✅ 1. HẠ THẤP NGƯỠNG: Cho phép claim từ 1 HP trở lên
-  if (pendingMonsterHP < 1 || !currentHero || isProcessing) {
-    if (pendingMonsterHP < 1) {
-      showToast("Accumulate at least 1 HP to claim rewards!", "error"); // 👈 Hiện ở góc
-    }
-    return;
-  }
+  const heroStrength = currentHero?.data?.content?.fields?.strength || 1;
+  const monsterHP = pendingMonsterHP; // Ví dụ: 30
 
-  const totalMultiplier = pendingMonsterHP; 
-  const requiredStamina = totalMultiplier; 
+  // ✅ TÍNH TOÁN THEO LOGIC MỚI: 30 HP / 5 Strength = 6 Stamina
+  const hitsToKill = Math.ceil(monsterHP / heroStrength);
+  const staminaNeeded = hitsToKill; 
 
-  if (displayStamina < requiredStamina) {
-    showToast(`Insufficient stamina! Need ${requiredStamina} but only have ${displayStamina}.`, "warning");
+  if (monsterHP < 1 || !currentHero || isProcessing) return;
+
+  if (displayStamina < staminaNeeded) {
+    toast.error(`Low Stamina! Need ${staminaNeeded} hits (${staminaNeeded} stamina) to claim ${monsterHP} XP.`); //
     return;
   }
 
@@ -126,25 +125,22 @@ const handleClaimFarmRewards = async () => {
     setIsProcessing(true);
     const txb = new Transaction();
     txb.moveCall({
-      target: `${PACKAGE_ID}::game::workout`,
+      target: `${PACKAGE_ID}::game::slay_monster`, 
       arguments: [
         txb.object(currentHero.data.objectId),
         txb.object(GAME_INFO_ID),
         txb.object(CLOCK_ID),
-        txb.pure.u64(totalMultiplier),
+        txb.pure.u64(monsterHP), // Gửi tổng HP (30) lên, Contract tự chia Strength
       ],
     });
 
     signAndExecuteTransaction({ transaction: txb }, {
       onSuccess: () => {
         setPendingMonsterHP(0);
-        showToast("Rewards claimed successfully!", "success"); // 👈 Hiện ở góc
+        toast.success(`Victory! Used ${staminaNeeded} stamina to gain ${monsterHP} XP.`); //
         setTimeout(() => window.location.reload(), 1500);
       },
-      onError: (err) => {
-        console.error("Error:", err);
-        showToast("Transaction failed. Please try again.", "error");
-      }
+      onError: (err) => toast.error("Combat sync failed!")
     });
   } finally {
     setIsProcessing(false);
