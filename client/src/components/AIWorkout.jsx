@@ -4,10 +4,14 @@ import * as poseDetection from '@tensorflow-models/pose-detection';
 import * as tf from '@tensorflow/tfjs-core';
 import '@tensorflow/tfjs-backend-webgl'; 
 import { motion } from "framer-motion";
-import { Skull } from 'lucide-react'; // Nhớ import icon này
+import { Skull } from 'lucide-react';
 
+// ✅ 1. CHUYỂN LOGIC NHẬN DIỆN RA NGOÀI ĐỂ CÁC HẰNG SỐ ĐỌC ĐƯỢC
+const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 const TARGET_REP = 3; 
-const FPS_LIMIT = 1000 / 15; 
+
+// ✅ 2. CẤU HÌNH FPS RIÊNG BIỆT: Mobile 7 FPS (mát máy) | PC 15 FPS (mượt)
+const FPS_LIMIT = isMobile ? (1000 / 7) : (1000 / 15); 
 
 function calculateAngle(a, b, c) {
   const radians = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
@@ -24,11 +28,10 @@ const AIWorkout = ({ onSessionUpdate, onAutoStop, isProcessing, stamina, accumul
   const squatStateRef = useRef("UP"); 
   const isCooldownRef = useRef(false); 
 
-  // ✅ BÍ KÍP ĐÂY: Dùng Ref để đồng bộ dữ liệu vào vòng lặp AI
+  // Đồng bộ dữ liệu Stamina và Set vào Ref để AI không bị "lag" dữ liệu
   const staminaRef = useRef(stamina);
   const setsRef = useRef(accumulatedSets);
 
-  // Cập nhật Ref mỗi khi Prop thay đổi
   useEffect(() => {
     staminaRef.current = stamina;
     setsRef.current = accumulatedSets;
@@ -66,12 +69,13 @@ const AIWorkout = ({ onSessionUpdate, onAutoStop, isProcessing, stamina, accumul
   }, []);
 
   const detectPose = async (timestamp) => {
-    // ✅ CHỐT CHẶN 1: Nếu thực sự hết máu, dừng AI luôn
+    // CHỐT CHẶN: Dừng AI ngay nếu hết thể lực
     if (staminaRef.current < 10) {
       setFeedback("OUT OF STAMINA! 🪫");
       return; 
     }
 
+    // Giới hạn FPS để bảo vệ CPU/GPU tùy theo thiết bị
     if (timestamp - lastTimestampRef.current < FPS_LIMIT) {
       requestRef.current = requestAnimationFrame(detectPose);
       return;
@@ -88,6 +92,7 @@ const AIWorkout = ({ onSessionUpdate, onAutoStop, isProcessing, stamina, accumul
       
       if (poses && poses.length > 0) {
         const k = poses[0].keypoints;
+        // Kiểm tra độ tin cậy của các khớp hông, gối, cổ chân
         if (k[11].score > 0.4 && k[13].score > 0.4 && k[15].score > 0.4) {
           const angle = calculateAngle(k[11], k[13], k[15]);
 
@@ -104,18 +109,14 @@ const AIWorkout = ({ onSessionUpdate, onAutoStop, isProcessing, stamina, accumul
             if (countRef.current >= TARGET_REP) {
               isCooldownRef.current = true;
               setFeedback("SET COMPLETE! 🔥");
-              onSessionUpdate(); // Báo về App tăng Set
+              onSessionUpdate();
 
-              // ✅ CHỐT CHẶN 2: TÍNH TOÁN DỰA TRÊN DỮ LIỆU THẬT
-              // Chúng ta vừa xong 1 set, nên tổng set hiện tại là setsRef.current + 1
               const totalFinished = setsRef.current + 1;
               const nextSetCost = (totalFinished + 1) * 10;
 
               if (staminaRef.current < nextSetCost) {
                 setFeedback("STAMINA DEPLETED! STOPPING...");
-                setTimeout(() => {
-                  onAutoStop(); // Tắt Camera ngay
-                }, 1500);
+                setTimeout(() => onAutoStop(), 1500);
               } else {
                 setTimeout(() => {
                   countRef.current = 0;
@@ -135,10 +136,21 @@ const AIWorkout = ({ onSessionUpdate, onAutoStop, isProcessing, stamina, accumul
   };
 
   return (
-    <div className="relative w-full aspect-video rounded-3xl overflow-hidden bg-black shadow-2xl border-2 border-lime-500/10">
-      <Webcam ref={webcamRef} className="absolute inset-0 w-full h-full object-cover opacity-60" mirrored={true} />
+    <div className="relative w-full aspect-[3/4] md:aspect-video rounded-3xl overflow-hidden bg-black shadow-2xl border-2 border-lime-500/10">
+      <Webcam 
+        ref={webcamRef} 
+        className="absolute inset-0 w-full h-full object-cover opacity-60" 
+        mirrored={true}
+        videoConstraints={{ 
+          facingMode: "user",
+          // ✅ 3. ĐỘ PHÂN GIẢI LINH HOẠT: Mobile 360p | PC 720p
+          width: { ideal: isMobile ? 480 : 1280 }, 
+          height: { ideal: isMobile ? 360 : 720 },
+          frameRate: { ideal: isMobile ? 15 : 30 }
+        }} 
+      />
       
-      {/* Overlay cảnh báo khi hết stamina thực sự */}
+      {/* Overlay cảnh báo hết stamina */}
       {stamina < 10 && (
         <div className="absolute inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex flex-col items-center justify-center p-10 text-center">
           <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mb-4">
@@ -148,7 +160,7 @@ const AIWorkout = ({ onSessionUpdate, onAutoStop, isProcessing, stamina, accumul
         </div>
       )}
 
-      {/* Giao diện Overlay cũ giữ nguyên */}
+      {/* Stats UI Overlay */}
       <div className="absolute inset-0 flex flex-col justify-between p-6 pointer-events-none">
         <div className="flex justify-between items-start">
           <div className="bg-black/80 px-4 py-2 rounded-xl border border-white/5 backdrop-blur-md">

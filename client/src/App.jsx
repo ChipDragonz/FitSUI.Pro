@@ -20,11 +20,14 @@ import AIWorkout from './components/AIWorkout';
 import FusionZone from './components/FusionZone';
 import Inventory from './components/Inventory';
 import HuntingGrounds from './components/HuntingGrounds';
+import { useToast } from './context/ToastContext';
 
 // --- IMPORT ICONS ---
 import { Trophy, Package, Store, Sparkles, Play, Activity, Skull } from 'lucide-react';
 
 function App() {
+
+  const { showToast } = useToast();
   // --- 1. ELEMENT CONFIGURATION ---
   const ELEMENT_MAP = {
     0: { label: "METAL", color: "text-yellow-400", border: "border-yellow-500/50", shadow: "shadow-yellow-500/20" },
@@ -102,23 +105,24 @@ useEffect(() => {
 
 
 
-// 2. Hàm Claim gom tất cả kết quả vào 1 Transaction
-  const handleClaimFarmRewards = async () => {
-  if (pendingMonsterHP < 10 || !currentHero || isProcessing) {
-    if (pendingMonsterHP < 10) alert("Ní ơi, tích ít nhất 10 HP mới đủ 1 lần Claim!");
+const handleClaimFarmRewards = async () => {
+  // ✅ 1. HẠ THẤP NGƯỠNG: Cho phép claim từ 1 HP trở lên
+  if (pendingMonsterHP < 1 || !currentHero || isProcessing) {
+    if (pendingMonsterHP < 1) {
+      showToast("Accumulate at least 1 HP to claim rewards!", "error"); // 👈 Hiện ở góc
+    }
     return;
   }
 
-  // ✅ ĐỔI THÀNH CHIA 10: 10 HP = 1 Multiplier = 10 Stamina = 10 XP
-  const totalMultiplier = Math.floor(pendingMonsterHP / 10);
+  const totalMultiplier = pendingMonsterHP; 
+  const requiredStamina = totalMultiplier; 
 
-  const requiredStamina = totalMultiplier * 10;
   if (displayStamina < requiredStamina) {
-    alert(`Ní hết hơi rồi! Cần ${requiredStamina} Stamina nhưng chỉ có ${displayStamina}.`);
+    showToast(`Insufficient stamina! Need ${requiredStamina} but only have ${displayStamina}.`, "warning");
     return;
   }
 
-    try {
+  try {
     setIsProcessing(true);
     const txb = new Transaction();
     txb.moveCall({
@@ -131,13 +135,16 @@ useEffect(() => {
       ],
     });
 
-      signAndExecuteTransaction({ transaction: txb }, {
+    signAndExecuteTransaction({ transaction: txb }, {
       onSuccess: () => {
         setPendingMonsterHP(0);
-        console.log("Claim thành công!");
-        setTimeout(() => window.location.reload(), 1000);
+        showToast("Rewards claimed successfully!", "success"); // 👈 Hiện ở góc
+        setTimeout(() => window.location.reload(), 1500);
       },
-      onError: (err) => console.error("Lỗi:", err)
+      onError: (err) => {
+        console.error("Error:", err);
+        showToast("Transaction failed. Please try again.", "error");
+      }
     });
   } finally {
     setIsProcessing(false);
@@ -348,29 +355,37 @@ const handleSaveEquipment = async (finalPreview) => {
 
   {/* PHẦN REWARD CLAIM (ĐÚNG PHONG CÁCH NEON CỦA NÍ) */}
   {accumulatedSets > 0 && (
-    <div className="flex flex-col items-center gap-6 py-10 bg-lime-500/5 rounded-3xl border border-lime-500/20 shadow-2xl animate-fade-in">
-      <div className="flex items-center gap-3">
-        <Activity className="text-lime-400 w-5 h-5 animate-bounce" />
-        <span className="font-black text-lime-400 uppercase tracking-[0.2em] text-xs text-center">
-          Session complete: {accumulatedSets} Sets Finished! 🔥
-        </span>
-      </div>
+  <div className="flex flex-col items-center gap-4 md:gap-6 py-6 md:py-10 bg-lime-500/5 rounded-3xl border border-lime-500/20 shadow-2xl animate-fade-in w-full max-w-sm md:max-w-xl mx-auto px-4 md:px-0">
+    {/* ✅ Thêm w-full max-w-sm và px-4 để khung không bị tràn viền điện thoại */}
+    
+    <div className="flex items-center gap-2 md:gap-3">
+      <Activity className="text-lime-400 w-4 h-4 md:w-5 md:h-5 animate-bounce" />
+      <span className="font-black text-lime-400 uppercase tracking-wider md:tracking-[0.2em] text-[10px] md:text-xs text-center">
+        Session complete: {accumulatedSets} Sets Finished! 🔥
+      </span>
+    </div>
 
-      <button onClick={handleClaim} disabled={isProcessing} className="relative group scale-110 active:scale-95 transition-all">
-        <div className="absolute -inset-1 bg-gradient-to-r from-lime-400 to-emerald-600 rounded-2xl blur opacity-70 group-hover:opacity-100 transition duration-500"></div>
-        <div className="relative bg-slate-950 border border-white/20 px-12 py-5 rounded-2xl flex items-center gap-4 hover:bg-slate-800 transition-all">
-          <span className="text-2xl font-black text-white uppercase tracking-tighter">
-            {isProcessing ? "Confirming..." : `FINISH & CLAIM ${accumulatedSets * 10} XP`}
-          </span>
-          <Trophy className="text-lime-400 w-6 h-6" />
-        </div>
-      </button>
+    {/* ✅ Nút bấm: mobile bỏ scale-110, desktop giữ md:scale-110 */}
+    <button onClick={handleClaim} disabled={isProcessing} className="relative group active:scale-95 transition-all w-[95%] md:w-auto md:scale-110">
+      <div className="absolute -inset-1 bg-gradient-to-r from-lime-400 to-emerald-600 rounded-2xl blur md:blur-lg opacity-70 group-hover:opacity-100 transition duration-500"></div>
+      
+      <div className="relative bg-slate-950 border border-white/20 px-4 py-4 md:px-12 md:py-5 rounded-2xl flex items-center justify-center gap-2 md:gap-4 hover:bg-slate-800 transition-all">
+        {/* ✅ Chữ trong nút: mobile text-sm, desktop text-2xl. Thêm whitespace-nowrap để không bị rớt dòng */}
+        <span className="text-sm md:text-2xl font-black text-white uppercase tracking-tight md:tracking-tighter whitespace-nowrap">
+          {isProcessing ? "Confirming..." : `FINISH & CLAIM ${accumulatedSets * 10} XP`}
+        </span>
+        <Trophy className="text-lime-400 w-4 h-4 md:w-6 md:h-6" />
+      </div>
+    </button>
 
-      <p className="text-gray-600 text-[9px] font-black uppercase tracking-[0.4em] mt-2">
-        Permanently record results on Sui Blockchain
-      </p>
-    </div>
-  )}
+    {/* ✅ Dòng text nhỏ: mobile giảm tracking xuống để không bị vỡ dòng */}
+    <p className="text-gray-600 text-[8px] md:text-[9px] font-black uppercase tracking-normal md:tracking-[0.4em] mt-1 md:mt-2 text-center">
+      Permanently record results on Sui Blockchain
+    </p>
+  </div>
+)}
+
+
 </div>
               </div>
             )}
