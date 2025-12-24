@@ -7,7 +7,6 @@ module fitsui::game {
 
     // --- CÁC MÃ LỖI ---
     const E_NO_STAMINA: u64 = 2;
-    const E_IN_COOLDOWN: u64 = 3;
     const E_MINT_COOLDOWN: u64 = 4;
     const E_NOT_FUSIBLE: u64 = 5; 
     const E_SLOT_OCCUPIED: u64 = 6; 
@@ -18,7 +17,9 @@ module fitsui::game {
     const BASE_MAX_STAMINA: u64 = 100;
 
     // --- CHỈ SỐ SỨC MẠNH CỐ ĐỊNH ---
-    const BONUS_COMMON: u64 = 2;
+    const BONUS_COMMON: u64 = 2;    
+    const BONUS_RARE: u64 = 3;      
+    const BONUS_EPIC: u64 = 5;      
     const BONUS_LEGENDARY: u64 = 10; 
 
     public struct AdminCap has key { id: UID }
@@ -52,7 +53,8 @@ module fitsui::game {
         transfer::transfer(AdminCap { id: object::new(ctx) }, sender);
         
         transfer::share_object(GameInfo {
-            id: object::new(ctx), admin: sender, xp_per_workout: 10, level_threshold: 50,
+            id: object::new(ctx), admin: sender, xp_per_workout: 10, 
+            level_threshold: 100, // ✅ Đã tăng lên 100
             default_url: string::utf8(b"https://beige-urgent-clam-163.mypinata.cloud/ipfs/bafkreihflrgixxfqxqb5s22kl47ausqu3ruigpx6izhynbg6ewbrjs4ti4"),
             cooldown_ms: 5000, minters: table::new(ctx), hero_count: 0, item_count: 0, 
         });
@@ -74,9 +76,23 @@ module fitsui::game {
         BASE_MAX_STAMINA + (level * 15)
     }
 
+    // ✅ ĐÃ CẬP NHẬT: Công thức lập phương L^3
     fun get_next_level_threshold(level: u64, base_threshold: u64): u64 {
         let next_lv = level + 1;
-        next_lv * next_lv * base_threshold
+        next_lv * next_lv * next_lv * base_threshold 
+    }
+
+    // ✅ ĐÃ THÊM: Ma trận tên vật phẩm
+    fun get_item_base_metadata(part: u8): (String, String) {
+        let url = string::utf8(b"https://beige-urgent-clam-163.mypinata.cloud/ipfs/bafkreiddvwlcdtomvha4hii3vhpghpr3bpmf5z6v6nozszysvkmwhckesi");
+        
+        if (part == 0) (string::utf8(b"Hat"), url)
+        else if (part == 1) (string::utf8(b"Shirt"), url)
+        else if (part == 2) (string::utf8(b"Pants"), url)
+        else if (part == 3) (string::utf8(b"Shoes"), url)
+        else if (part == 4) (string::utf8(b"Gloves"), url)
+        else if (part == 5) (string::utf8(b"Armor"), url)
+        else (string::utf8(b"Sword"), url)
     }
 
     public fun get_total_strength(hero: &Hero): u64 {
@@ -128,7 +144,7 @@ module fitsui::game {
         transfer::transfer(hero, sender);
     }
 
-    // ✅ LOGIC TẬP LUYỆN: 1 Set = 10 Stamina & XP = Strength x 10
+    // ✅ ĐÃ CẬP NHẬT: Logic rơi đồ 100% (Test Mode) với 28 món đồ
     public entry fun workout(hero: &mut Hero, game_info: &mut GameInfo, clock: &Clock, multiplier: u64, ctx: &mut TxContext) {
         update_stamina_engine(hero, clock);
         let stamina_needed = 10 * multiplier;
@@ -139,23 +155,42 @@ module fitsui::game {
         let xp_gain = (total_str * 10) * multiplier; 
         hero.xp = hero.xp + xp_gain;
 
-        // Logic rơi đồ 100% (URL mới của ní)
-        let item_id = object::new(ctx);
+        // --- BẮT ĐẦU LOGIC RƠI ĐỒ TEST 100% ---
+        let timestamp = clock::timestamp_ms(clock);
+        let rarity_roll = (timestamp / 100) % 100;
+        let part_roll = ((timestamp / 10000) % 7) as u8; 
+
+        let (rarity, bonus, prefix);
+        if (rarity_roll < 70) { rarity = 0; bonus = BONUS_COMMON; prefix = b"C_"; }
+        else if (rarity_roll < 90) { rarity = 1; bonus = BONUS_RARE; prefix = b"R_"; }
+        else if (rarity_roll < 98) { rarity = 2; bonus = BONUS_EPIC; prefix = b"E_"; }
+        else { rarity = 3; bonus = BONUS_LEGENDARY; prefix = b"L_"; };
+
+        let (base_name, item_url) = get_item_base_metadata(part_roll);
+        
         game_info.item_count = game_info.item_count + 1;
-        let mut item_name = string::utf8(b"Sword #");
-        string::append(&mut item_name, u64_to_string(game_info.item_count));
+        let mut final_name = string::utf8(prefix);
+        string::append(&mut final_name, base_name);
+        string::append(&mut final_name, string::utf8(b" #"));
+        string::append(&mut final_name, u64_to_string(game_info.item_count));
+
         let item = Item {
-            id: item_id, name: item_name, part: 6, rarity: 0, bonus: BONUS_COMMON,
-            url: string::utf8(b"https://beige-urgent-clam-163.mypinata.cloud/ipfs/bafkreiddvwlcdtomvha4hii3vhpghpr3bpmf5z6v6nozszysvkmwhckesi"),
+            id: object::new(ctx), 
+            name: final_name, 
+            part: part_roll, 
+            rarity: rarity, 
+            bonus: bonus, 
+            url: item_url, 
         };
-        event::emit(ItemDropped { hero_id: object::uid_to_inner(&hero.id), item_id: object::uid_to_inner(&item.id), owner: ctx.sender(), rarity: 0 });
+
+        event::emit(ItemDropped { hero_id: object::uid_to_inner(&hero.id), item_id: object::uid_to_inner(&item.id), owner: ctx.sender(), rarity: rarity });
         transfer::public_transfer(item, ctx.sender());
+        // --- KẾT THÚC LOGIC RƠI ĐỒ ---
 
         event::emit(WorkoutCompleted { id: object::uid_to_inner(&hero.id), owner: ctx.sender(), new_xp: hero.xp, new_stamina: hero.stamina });
         check_level_up(hero, game_info, ctx);
     }
 
-    // ✅ LOGIC SĂN QUÁI: Sức mạnh cao tiết kiệm Stamina
     public entry fun slay_monster(hero: &mut Hero, game_info: &mut GameInfo, clock: &Clock, monster_hp: u64, ctx: &mut TxContext) {
         update_stamina_engine(hero, clock);
         let strength = get_total_strength(hero);
