@@ -2,7 +2,8 @@ import {
   useDisconnectWallet, 
   useSuiClientQuery, 
   useCurrentAccount,
-  useSignAndExecuteTransaction // 👈 THÊM DÒNG NÀY
+  useSignAndExecuteTransaction, // 👈 THÊM DÒNG NÀY
+  useSuiClient // 👈 THÊM DÒNG NÀY
 } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
 import { useState, useEffect, useMemo } from 'react';
@@ -27,7 +28,9 @@ import { Trophy, Package, Store, Sparkles, Play, Activity, Skull } from 'lucide-
 
 function App() {
 
+  const client = useSuiClient();
   const toast = useToast();
+  
   // --- 1. ELEMENT CONFIGURATION ---
   const ELEMENT_MAP = {
     0: { label: "METAL", color: "text-yellow-400", border: "border-yellow-500/50", shadow: "shadow-yellow-500/20" },
@@ -74,6 +77,7 @@ const handleEquip = (itemId) => {
 const [staminaProgress, setStaminaProgress] = useState(0); // 👈 THÊM STATE NÀY
 
 // --- TRONG App.jsx ---
+
 useEffect(() => {
   const fields = currentHero?.data?.content?.fields;
   if (!fields) return;
@@ -83,25 +87,36 @@ useEffect(() => {
     const lastUpdate = Number(fields.last_update_timestamp || 0);
     const staminaOnChain = Number(fields.stamina || 0);
     const level = Number(fields.level || 0);
-    const maxStamina = 100 + (level * 15); //
+    const maxStamina = 100 + (level * 15);
+
+    // ✅ TÍNH LƯỢNG HỒI DỰA TRÊN GIÀY ĐANG MẶC TRONG PREVIEW HOẶC TRÊN XÍCH
+    let amountPerMinute = 1; 
+    const equippedShoeName = tempEquipment.shoes;
+    
+    if (equippedShoeName !== 'none') {
+        const shoeItem = inventoryItems.find(i => i.name === equippedShoeName);
+        if (shoeItem) {
+            // Lượng hồi = 1 + bonus (Giày Common +2 sẽ hồi 3 điểm/phút)
+            amountPerMinute += Number(shoeItem.bonus || 0); 
+        }
+    }
 
     const timePassed = Math.max(0, now - lastUpdate);
-    const staminaRegen = Math.floor(timePassed / 60000); //
-    const totalStamina = Math.min(maxStamina, staminaOnChain + staminaRegen);
+    const intervalsPassed = Math.floor(timePassed / 60000); // 60,000ms = 1 phút
     
-    // ✅ Cập nhật State để UI thay đổi, nhưng KHÔNG LOG ra console nữa
+    const totalStamina = Math.min(maxStamina, staminaOnChain + (intervalsPassed * amountPerMinute));
+    
     setDisplayStamina(totalStamina);
 
+    // Thanh progress bar vẫn chạy nhịp nhàng theo chu kỳ 1 phút
     const progress = totalStamina >= maxStamina ? 100 : ((timePassed % 60000) / 60000) * 100;
     setStaminaProgress(progress);
-    
   };
 
   updateStamina();
-  // Giữ interval 1s để thanh Progress Bar nhích mượt mà
   const interval = setInterval(updateStamina, 1000); 
   return () => clearInterval(interval);
-}, [currentHero?.data?.objectId, currentHero?.data?.content?.fields?.stamina]);
+}, [currentHero, tempEquipment.shoes, inventoryItems]); // ✅ Tự động cập nhật tốc độ khi đổi giày
 
 
 
@@ -130,27 +145,15 @@ const getHeroTotalStrength = (hero) => {
 
 
 
-// --- TRONG App.jsx ---
+// 1. TỐI ƯU HÀM SĂN QUÁI (FARM ZONE)
 const handleClaimFarmRewards = async () => {
-  // 1. Lấy chỉ số sức mạnh thực tế (Gốc + Đồ)
   const heroStrength = getHeroTotalStrength(currentHero); 
-  const monsterHP = pendingMonsterHP; 
+  const staminaNeeded = Math.ceil(pendingMonsterHP / heroStrength); 
 
-  // 2. TÍNH TOÁN SỐ LẦN CHÉM (Hits to Kill)
-  // Công thức: HP chia Strength làm tròn lên
-  const hitsToKill = Math.ceil(monsterHP / heroStrength);
-  
-  // ✅ LUẬT: 1 Hit = 1 Stamina
-  const staminaNeeded = hitsToKill; 
+  if (pendingMonsterHP < 1 || !currentHero || isProcessing) return;
 
-  if (monsterHP < 1 || !currentHero || isProcessing) return;
-
-  // 3. CHỐT CHẶN: Chỉ so sánh Thể lực hiện có với số nhát chém (Hits)
-  // Không quan tâm EXP là bao nhiêu, chỉ quan tâm có đủ sức chém hết số Hits không
   if (displayStamina < staminaNeeded) {
-    toast.error(
-      `Not enough stamina! You need ${staminaNeeded} stamina to land ${hitsToKill} hits on this monster.`
-    ); //
+    toast.error(`Need ${staminaNeeded} stamina!`); 
     return;
   }
 
@@ -163,29 +166,65 @@ const handleClaimFarmRewards = async () => {
         txb.object(currentHero.data.objectId),
         txb.object(GAME_INFO_ID),
         txb.object(CLOCK_ID),
-        txb.pure.u64(monsterHP), // Gửi tổng HP quái lên để Contract tự tính lại
+        txb.pure.u64(pendingMonsterHP),
       ],
     });
 
-    signAndExecuteTransaction({ transaction: txb }, {
-      onSuccess: () => {
+    signAndExecuteTransaction({ 
+      transaction: txb,
+    }, {
+      onSuccess: async (response) => {
+        const monsterHPClaimed = pendingMonsterHP;
         setPendingMonsterHP(0);
-        // Thông báo rõ ràng: tốn bao nhiêu nhát (Stamina) để đổi lấy bao nhiêu XP
-        toast.success(`Victory! Defeated monster with ${hitsToKill} hits. Gained ${monsterHP} XP.`); 
-        if (refetchHeroes) refetchHeroes();
-    setIsProcessing(false);
-  },
-  onError: (err) => {
-    toast.error("Combat sync failed!");
-    setIsProcessing(false);
-  }
+        console.log("Transaction Digest:", response.digest);
 
+        // ✅ CÁCH MỚI: Đợi 1 giây thủ công để Indexer kịp thở
+        setTimeout(async () => {
+          try {
+            // ✅ Dùng getTransactionBlock - Hàm này cực kỳ ổn định ở mọi phiên bản
+            const txData = await client.getTransactionBlock({
+              digest: response.digest,
+              options: { showEvents: true }
+            });
+
+            console.log("📋 Dữ liệu giao dịch đầy đủ:", txData);
+
+            // Tìm sự kiện rơi đồ
+            const dropEvent = txData.events?.find(e => 
+              e.type.toLowerCase().includes("itemdropped")
+            );
+
+            if (dropEvent && dropEvent.parsedJson) {
+              const { rarity, name, url } = dropEvent.parsedJson;
+              console.log("🔥 JACKPOT DETECTED!", name);
+              
+              // 🔥 KÍCH HOẠT BẢNG TO ĐÙNG GIỮA MÀN HÌNH
+              toast.showLoot(Number(rarity), name, url); 
+            } else {
+              // Nếu không rơi đồ thì hiện XP ở góc như bình thường
+              toast.success(`Victory! Gained ${monsterHPClaimed} XP.`);
+            }
+          } catch (err) {
+            console.error("Lỗi khi lấy sự kiện:", err);
+            toast.success(`Victory! Gained ${monsterHPClaimed} XP.`);
+          } finally {
+            // Tải lại kho đồ và tắt trạng thái xử lý
+            if (refetchItems) refetchItems();
+            if (refetchHeroes) refetchHeroes();
+            setIsProcessing(false);
+          }
+        }, 1200); // Đợi 1.2 giây cho chắc chắn
+      },
+      onError: (err) => {
+        console.error("Giao dịch thất bại:", err);
+        toast.error("Transaction failed!");
+        setIsProcessing(false);
+      }
     });
-  } finally {
+  } catch (e) {
     setIsProcessing(false);
   }
 };
-
 
 
 // Hàm tìm link ảnh từ tên món đồ
@@ -219,22 +258,31 @@ const previewUrls = useMemo(() => ({
     { id: 'farm', label: 'Farm Zone', icon: Skull },
   ];
 
-  const handleClaim = () => {
-  if (accumulatedSets === 0) return;
+// 2. TỐI ƯU HÀM TẬP LUYỆN (SQUAT ZONE)
+const handleClaim = () => {
+  if (accumulatedSets === 0 || isProcessing) return;
   setIsProcessing(true);
 
-  const heroStr = getHeroTotalStrength(currentHero);
-  const finalXP = (heroStr * 10) * accumulatedSets;
-
-  workout(currentHeroId, accumulatedSets, () => {
+  workout(currentHeroId, accumulatedSets, (response) => {
     setAccumulatedSets(0);
     setIsWorkoutStarted(false);
     
-    toast.success(`Amazing! You gained ${finalXP} XP based on your ${heroStr} Strength!`); 
+    // ✅ CẬP NHẬT: Squat cũng hiện bảng to nếu rơi đồ
+    const dropEvent = response?.events?.find(e => e.type.endsWith("::game::ItemDropped"));
     
-    // ✅ THAY ĐỔI: Cập nhật dữ liệu mới từ Blockchain
-    if (refetchHeroes) refetchHeroes(); 
-    setIsProcessing(false); // Kết thúc trạng thái xử lý
+    if (dropEvent) {
+      const rarity = Number(dropEvent.parsedJson.rarity);
+      toast.showLoot(rarity, "TRAINING REWARD DROPPED!"); // 🔥 Bảng to giữa màn hình
+    } else {
+      const xp = (getHeroTotalStrength(currentHero) * 10) * accumulatedSets;
+      toast.success(`Gained ${xp} XP!`); //
+    }
+
+    setTimeout(() => {
+      if (refetchHeroes) refetchHeroes();
+      if (refetchItems) refetchItems(); 
+      setIsProcessing(false);
+    }, 1000);
   });
 };
 
@@ -255,13 +303,10 @@ const handleSlayMonster = (monsterMaxHP) => {
 // --- Inside App.jsx Logic & States section ---
 
 // 1. Fetch Item Objects (Gear/NFTs) from Sui
-const { data: itemData } = useSuiClientQuery('getOwnedObjects', {
-  owner: account?.address,
-  filter: { 
-    // Replace with your actual Item Struct type from fitsui.move
-    StructType: `${PACKAGE_ID}::game::Item` 
-  },
-  options: { showContent: true },
+const { data: itemData, refetch: refetchItems } = useSuiClientQuery('getOwnedObjects', { // ✅ THÊM refetchItems
+  owner: account?.address,
+  filter: { StructType: `${PACKAGE_ID}::game::Item` },
+  options: { showContent: true },
 }, { enabled: !!account });
 
 // 2. Sync fetched data to inventoryItems state

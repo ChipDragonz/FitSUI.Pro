@@ -44,8 +44,19 @@ module fitsui::game {
     public struct HeroCreated has copy, drop { id: ID, owner: address, name: String, element: u8, number: u64 }
     public struct WorkoutCompleted has copy, drop { id: ID, owner: address, new_xp: u64, new_stamina: u64 }
     public struct HeroLeveledUp has copy, drop { id: ID, owner: address, new_level: u64 }
+    
+    // ✅ FIX: Đã sử dụng hết các field để không bị báo Warning
     public struct HeroFused has copy, drop { id: ID, owner: address, new_level: u64 }
-    public struct ItemDropped has copy, drop { hero_id: ID, item_id: ID, owner: address, rarity: u8 }
+    
+    // ✅ CẬP NHẬT: Thêm name và url để Jackpot Overlay hiện ảnh tự động
+    public struct ItemDropped has copy, drop { 
+        hero_id: ID, 
+        item_id: ID, 
+        owner: address, 
+        rarity: u8,
+        name: String, 
+        url: String 
+    }
     public struct MonsterSlain has copy, drop { id: ID, monster_hp: u64, stamina_spent: u64 }
 
     fun init(ctx: &mut TxContext) {
@@ -54,7 +65,7 @@ module fitsui::game {
         
         transfer::share_object(GameInfo {
             id: object::new(ctx), admin: sender, xp_per_workout: 10, 
-            level_threshold: 100, // ✅ Đã tăng lên 100
+            level_threshold: 100, 
             default_url: string::utf8(b"https://beige-urgent-clam-163.mypinata.cloud/ipfs/bafkreihflrgixxfqxqb5s22kl47ausqu3ruigpx6izhynbg6ewbrjs4ti4"),
             cooldown_ms: 5000, minters: table::new(ctx), hero_count: 0, item_count: 0, 
         });
@@ -76,13 +87,11 @@ module fitsui::game {
         BASE_MAX_STAMINA + (level * 15)
     }
 
-    // ✅ ĐÃ CẬP NHẬT: Công thức lập phương L^3
     fun get_next_level_threshold(level: u64, base_threshold: u64): u64 {
         let next_lv = level + 1;
         next_lv * next_lv * next_lv * base_threshold 
     }
 
-    // ✅ ĐÃ THÊM: Ma trận tên vật phẩm
     fun get_item_base_metadata(part: u8): (String, String) {
         let url = string::utf8(b"https://beige-urgent-clam-163.mypinata.cloud/ipfs/bafkreiddvwlcdtomvha4hii3vhpghpr3bpmf5z6v6nozszysvkmwhckesi");
         
@@ -110,16 +119,35 @@ module fitsui::game {
     }
 
     fun update_stamina_engine(hero: &mut Hero, clock: &Clock) {
-        let current_time = clock::timestamp_ms(clock);
-        let time_passed = current_time - hero.last_update_timestamp;
-        let stamina_regen = time_passed / STAMINA_REGEN_MS;
-        let max_stamina = get_max_stamina(hero.level);
-        if (stamina_regen > 0) {
-            hero.stamina = if (hero.stamina + stamina_regen > max_stamina) { max_stamina } 
-                          else { hero.stamina + stamina_regen };
+    let current_time = clock::timestamp_ms(clock);
+    let time_passed = current_time - hero.last_update_timestamp;
+    
+    // 1. Tính số chu kỳ 60 giây đã trôi qua
+    let intervals = time_passed / STAMINA_REGEN_MS; 
+
+    if (intervals > 0) {
+        // 2. Mặc định hồi 1 điểm mỗi chu kỳ
+        let mut amount_per_interval = 1; 
+        
+        // Kiểm tra xem có đang mang giày (Shoes - Part 3) không
+        let part_label = u64_to_string(3); 
+        if (ofield::exists_(&hero.id, part_label)) {
+            let shoes = ofield::borrow<String, Item>(&hero.id, part_label);
+            // ✅ CỘNG THÊM BONUS VÀO LƯỢNG HỒI (VD: 1 + 2 = 3 stamina/phút)
+            amount_per_interval = amount_per_interval + shoes.bonus; 
         };
-        hero.last_update_timestamp = current_time;
-    }
+
+        let total_regen = intervals * amount_per_interval;
+        let max_stamina = get_max_stamina(hero.level);
+
+        // 3. Cập nhật Stamina và mốc thời gian
+        hero.stamina = if (hero.stamina + total_regen > max_stamina) { max_stamina } 
+                      else { hero.stamina + total_regen };
+
+        // Chỉ cập nhật timestamp theo số chu kỳ đã tính để không mất thời gian dư
+        hero.last_update_timestamp = hero.last_update_timestamp + (intervals * STAMINA_REGEN_MS);
+    };
+}
 
     // --- CORE LOGIC ---
 
@@ -144,7 +172,6 @@ module fitsui::game {
         transfer::transfer(hero, sender);
     }
 
-    // ✅ ĐÃ CẬP NHẬT: Logic rơi đồ 100% (Test Mode) với 28 món đồ
     public entry fun workout(hero: &mut Hero, game_info: &mut GameInfo, clock: &Clock, multiplier: u64, ctx: &mut TxContext) {
         update_stamina_engine(hero, clock);
         let stamina_needed = 10 * multiplier;
@@ -155,7 +182,6 @@ module fitsui::game {
         let xp_gain = (total_str * 10) * multiplier; 
         hero.xp = hero.xp + xp_gain;
 
-        // --- BẮT ĐẦU LOGIC RƠI ĐỒ TEST 100% ---
         let timestamp = clock::timestamp_ms(clock);
         let rarity_roll = (timestamp / 100) % 100;
         let part_roll = ((timestamp / 10000) % 7) as u8; 
@@ -183,9 +209,15 @@ module fitsui::game {
             url: item_url, 
         };
 
-        event::emit(ItemDropped { hero_id: object::uid_to_inner(&hero.id), item_id: object::uid_to_inner(&item.id), owner: ctx.sender(), rarity: rarity });
+        event::emit(ItemDropped { 
+            hero_id: object::uid_to_inner(&hero.id), 
+            item_id: object::uid_to_inner(&item.id), 
+            owner: ctx.sender(), 
+            rarity: rarity,
+            name: final_name, 
+            url: item_url 
+        });
         transfer::public_transfer(item, ctx.sender());
-        // --- KẾT THÚC LOGIC RƠI ĐỒ ---
 
         event::emit(WorkoutCompleted { id: object::uid_to_inner(&hero.id), owner: ctx.sender(), new_xp: hero.xp, new_stamina: hero.stamina });
         check_level_up(hero, game_info, ctx);
@@ -198,6 +230,44 @@ module fitsui::game {
         assert!(hero.stamina >= hits_needed, E_NO_STAMINA);
         hero.stamina = hero.stamina - hits_needed;
         hero.xp = hero.xp + monster_hp;
+
+        let timestamp = clock::timestamp_ms(clock);
+        let rarity_roll = (timestamp / 100) % 100;
+        let part_roll = ((timestamp / 10000) % 7) as u8; 
+
+        let (rarity, bonus, prefix);
+        if (rarity_roll < 70) { rarity = 0; bonus = BONUS_COMMON; prefix = b"C_"; }
+        else if (rarity_roll < 90) { rarity = 1; bonus = BONUS_RARE; prefix = b"R_"; }
+        else if (rarity_roll < 98) { rarity = 2; bonus = BONUS_EPIC; prefix = b"E_"; }
+        else { rarity = 3; bonus = BONUS_LEGENDARY; prefix = b"L_"; };
+
+        let (base_name, item_url) = get_item_base_metadata(part_roll);
+        
+        game_info.item_count = game_info.item_count + 1;
+        let mut final_name = string::utf8(prefix);
+        string::append(&mut final_name, base_name);
+        string::append(&mut final_name, string::utf8(b" #"));
+        string::append(&mut final_name, u64_to_string(game_info.item_count));
+
+        let item = Item {
+            id: object::new(ctx), 
+            name: final_name, 
+            part: part_roll, 
+            rarity: rarity, 
+            bonus: bonus, 
+            url: item_url, 
+        };
+
+        // ✅ FIXED: Emit đúng cấu trúc struct để Frontend đọc được ảnh
+        event::emit(ItemDropped { 
+            hero_id: object::uid_to_inner(&hero.id), 
+            item_id: object::uid_to_inner(&item.id), 
+            owner: ctx.sender(), 
+            rarity: rarity,
+            name: final_name,
+            url: item_url
+        });
+        transfer::public_transfer(item, ctx.sender());
 
         event::emit(MonsterSlain { id: object::uid_to_inner(&hero.id), monster_hp, stamina_spent: hits_needed });
         check_level_up(hero, game_info, ctx);
@@ -216,17 +286,40 @@ module fitsui::game {
 
     public entry fun fuse_heroes(h1: Hero, h2: Hero, h3: Hero, game_info: &mut GameInfo, clock: &Clock, ctx: &mut TxContext) {
         assert!(h1.element == h2.element && h1.level == h2.level && h2.level == h3.level, E_NOT_FUSIBLE);
+        
         game_info.hero_count = game_info.hero_count + 1;
         let mut fused_name = string::utf8(b"Hero #");
         string::append(&mut fused_name, u64_to_string(game_info.hero_count));
+        
         let lv = h1.level + 2;
         let fused_hero = Hero {
-            id: object::new(ctx), name: fused_name, level: lv, xp: 0, url: h1.url,
-            stamina: get_max_stamina(lv), strength: lv + 1, element: h1.element,
-            last_update_timestamp: clock::timestamp_ms(clock), number: game_info.hero_count,
+            id: object::new(ctx), 
+            name: fused_name, 
+            level: lv, 
+            xp: 0, 
+            url: h1.url,
+            stamina: get_max_stamina(lv), 
+            strength: lv + 1, 
+            element: h1.element,
+            last_update_timestamp: clock::timestamp_ms(clock), 
+            number: game_info.hero_count,
         };
-        let Hero { id: id1, .. } = h1; let Hero { id: id2, .. } = h2; let Hero { id: id3, .. } = h3;
-        object::delete(id1); object::delete(id2); object::delete(id3);
+
+        // ✅ FIXED: Phát event để xóa cảnh báo "unused struct field"
+        event::emit(HeroFused { 
+            id: object::uid_to_inner(&fused_hero.id), 
+            owner: ctx.sender(), 
+            new_level: lv 
+        });
+
+        let Hero { id: id1, .. } = h1; 
+        let Hero { id: id2, .. } = h2; 
+        let Hero { id: id3, .. } = h3;
+        
+        object::delete(id1); 
+        object::delete(id2); 
+        object::delete(id3);
+        
         transfer::transfer(fused_hero, ctx.sender());
     }
 
