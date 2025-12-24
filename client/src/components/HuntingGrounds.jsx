@@ -13,10 +13,9 @@ const MONSTER_DB = [
 
 const HuntingGrounds = ({ hero, previewUrls, onSlay, pendingMonsterHP, onClaim, isProcessing, stamina }) => {
   const heroFields = hero?.content?.fields || {};
+  // ✅ Dùng totalStrength để tính sát thương thực tế
   const totalStrength = Number(heroFields.strength || 1);
   const heroLevel = Number(heroFields.level || 0);
-
-  // 1. Tính toán giới hạn Stamina (Khớp Move contract)
   const maxStamina = 100 + (heroLevel * 15);
 
   const [currentMonster, setCurrentMonster] = useState(MONSTER_DB[0]);
@@ -25,16 +24,17 @@ const HuntingGrounds = ({ hero, previewUrls, onSlay, pendingMonsterHP, onClaim, 
   const [isAttacking, setIsAttacking] = useState(false);
   const [damagePopup, setDamagePopup] = useState(null);
 
-  // 2. Logic tính toán chi phí và giới hạn
-  const nextProjectedHP = pendingMonsterHP + totalStrength;
-  const nextProjectedCost = Math.floor(nextProjectedHP / 10) * 10;
+  // ✅ 1. TÍNH TOÁN THEO HITS (Sửa lại toàn bộ đoạn này)
+  const currentMonsterHits = Math.ceil(currentMonster.hp / totalStrength);
   
-  // Kiểm tra nếu tiêu diệt con quái này sẽ làm tổng phí vượt quá Max Stamina
-  const potentialHPAfterKill = pendingMonsterHP + currentMonster.hp;
-  const costAfterKill = Math.floor(potentialHPAfterKill / 10) * 10;
-
-  const isOutOfStamina = stamina < nextProjectedCost;
-  const isMonsterTooHeavy = costAfterKill > maxStamina; // Ngăn chặn kẹt Exp
+  // Tính tổng số Hits đã tích lũy (Pending)
+  const accumulatedHits = Math.ceil(pendingMonsterHP / totalStrength);
+  
+  // Kiểm tra đủ Stamina để chém con quái hiện tại không
+  const isOutOfStamina = stamina < currentMonsterHits;
+  
+  // Ngăn chặn việc tích lũy quá giới hạn Stamina tối đa của Hero
+  const isMonsterTooHeavy = (accumulatedHits + currentMonsterHits) > maxStamina;
 
   const getRandomMonster = () => {
     const totalWeight = MONSTER_DB.reduce((sum, m) => sum + m.chance, 0);
@@ -47,7 +47,10 @@ const HuntingGrounds = ({ hero, previewUrls, onSlay, pendingMonsterHP, onClaim, 
   };
 
   const handleAttack = () => {
-    if (monsterHP <= 0 || isProcessing || isOutOfStamina || isMonsterTooHeavy) return;
+    // ✅ 2. Dùng biến hitsNeeded thay vì tính trực tiếp trong hàm
+    if (stamina < currentMonsterHits) {
+      return; // Nút disabled đã chặn rồi, nhưng cứ check cho chắc
+    }
 
     setIsAttacking(true);
     setDamagePopup(totalStrength);
@@ -173,7 +176,7 @@ const HuntingGrounds = ({ hero, previewUrls, onSlay, pendingMonsterHP, onClaim, 
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="flex flex-col items-center gap-4 py-6 bg-lime-500/10 rounded-[2rem] border border-lime-500/20 shadow-2xl backdrop-blur-xl">
             <div className="flex items-center gap-2">
                <div className="w-2 h-2 bg-lime-500 rounded-full animate-ping" />
-               <p className="text-lime-400 font-black uppercase text-xs tracking-[0.2em]">Unclaimed Rewards: {pendingMonsterHP} HP ⚔️</p>
+               <p className="text-lime-400 font-black uppercase text-xs tracking-[0.2em]">Unclaimed Rewards: {pendingMonsterHP} EXP ⚔️</p>
             </div>
             <button onClick={onClaim} disabled={isProcessing} className="relative group active:scale-95 transition-all disabled:opacity-50">
               <div className="absolute -inset-1 bg-lime-500 rounded-xl blur opacity-30 group-hover:opacity-60 transition"></div>

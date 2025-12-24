@@ -27,7 +27,7 @@ import { Trophy, Package, Store, Sparkles, Play, Activity, Skull } from 'lucide-
 
 function App() {
 
-  const { showToast } = useToast();
+  const toast = useToast();
   // --- 1. ELEMENT CONFIGURATION ---
   const ELEMENT_MAP = {
     0: { label: "METAL", color: "text-yellow-400", border: "border-yellow-500/50", shadow: "shadow-yellow-500/20" },
@@ -38,7 +38,7 @@ function App() {
   };
 
   // --- 2. LOGIC & STATES ---
-  const { account, heroes, mintHero, workout, fuseHeroes, nextMintTime, saveEquipment } = useGame();
+  const { account, heroes, mintHero, workout, fuseHeroes, nextMintTime, saveEquipment, refetchHeroes } = useGame();
   const { mutate: disconnect } = useDisconnectWallet();
 const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
 const [pendingMonsterHP, setPendingMonsterHP] = useState(0);
@@ -105,19 +105,52 @@ useEffect(() => {
 
 
 
+// ✅ Cập nhật lại hàm này trong App.jsx
+const getHeroTotalStrength = (hero) => {
+  // Kiểm tra kỹ cấu trúc data từ Sui
+  const fields = hero?.data?.content?.fields;
+  if (!fields) return 1; 
+
+  // 1. Lấy sức mạnh gốc (Trong ảnh của ní là 2)
+  let totalStrength = Number(fields.strength || 1);
+
+  // 2. Cộng thêm Bonus từ đồ đang mặc trong Preview
+  Object.values(tempEquipment).forEach(itemName => {
+    if (itemName !== 'none') {
+      const item = inventoryItems.find(i => i.name === itemName);
+      if (item) {
+        totalStrength += (item.bonus || 0);
+      }
+    }
+  });
+  
+  return totalStrength;
+};
+
+
+
+
 // --- TRONG App.jsx ---
 const handleClaimFarmRewards = async () => {
-  const heroStrength = currentHero?.data?.content?.fields?.strength || 1;
-  const monsterHP = pendingMonsterHP; // Ví dụ: 30
+  // 1. Lấy chỉ số sức mạnh thực tế (Gốc + Đồ)
+  const heroStrength = getHeroTotalStrength(currentHero); 
+  const monsterHP = pendingMonsterHP; 
 
-  // ✅ TÍNH TOÁN THEO LOGIC MỚI: 30 HP / 5 Strength = 6 Stamina
+  // 2. TÍNH TOÁN SỐ LẦN CHÉM (Hits to Kill)
+  // Công thức: HP chia Strength làm tròn lên
   const hitsToKill = Math.ceil(monsterHP / heroStrength);
+  
+  // ✅ LUẬT: 1 Hit = 1 Stamina
   const staminaNeeded = hitsToKill; 
 
   if (monsterHP < 1 || !currentHero || isProcessing) return;
 
+  // 3. CHỐT CHẶN: Chỉ so sánh Thể lực hiện có với số nhát chém (Hits)
+  // Không quan tâm EXP là bao nhiêu, chỉ quan tâm có đủ sức chém hết số Hits không
   if (displayStamina < staminaNeeded) {
-    toast.error(`Low Stamina! Need ${staminaNeeded} hits (${staminaNeeded} stamina) to claim ${monsterHP} XP.`); //
+    toast.error(
+      `Not enough stamina! You need ${staminaNeeded} stamina to land ${hitsToKill} hits on this monster.`
+    ); //
     return;
   }
 
@@ -130,17 +163,23 @@ const handleClaimFarmRewards = async () => {
         txb.object(currentHero.data.objectId),
         txb.object(GAME_INFO_ID),
         txb.object(CLOCK_ID),
-        txb.pure.u64(monsterHP), // Gửi tổng HP (30) lên, Contract tự chia Strength
+        txb.pure.u64(monsterHP), // Gửi tổng HP quái lên để Contract tự tính lại
       ],
     });
 
     signAndExecuteTransaction({ transaction: txb }, {
       onSuccess: () => {
         setPendingMonsterHP(0);
-        toast.success(`Victory! Used ${staminaNeeded} stamina to gain ${monsterHP} XP.`); //
-        setTimeout(() => window.location.reload(), 1500);
-      },
-      onError: (err) => toast.error("Combat sync failed!")
+        // Thông báo rõ ràng: tốn bao nhiêu nhát (Stamina) để đổi lấy bao nhiêu XP
+        toast.success(`Victory! Defeated monster with ${hitsToKill} hits. Gained ${monsterHP} XP.`); 
+        if (refetchHeroes) refetchHeroes();
+    setIsProcessing(false);
+  },
+  onError: (err) => {
+    toast.error("Combat sync failed!");
+    setIsProcessing(false);
+  }
+
     });
   } finally {
     setIsProcessing(false);
@@ -181,14 +220,23 @@ const previewUrls = useMemo(() => ({
   ];
 
   const handleClaim = () => {
-    if (accumulatedSets === 0) return;
-    setIsProcessing(true);
-    workout(currentHeroId, accumulatedSets, () => {
-      setAccumulatedSets(0);
-      setIsProcessing(false);
-      setIsWorkoutStarted(false);
-    });
-  };
+  if (accumulatedSets === 0) return;
+  setIsProcessing(true);
+
+  const heroStr = getHeroTotalStrength(currentHero);
+  const finalXP = (heroStr * 10) * accumulatedSets;
+
+  workout(currentHeroId, accumulatedSets, () => {
+    setAccumulatedSets(0);
+    setIsWorkoutStarted(false);
+    
+    toast.success(`Amazing! You gained ${finalXP} XP based on your ${heroStr} Strength!`); 
+    
+    // ✅ THAY ĐỔI: Cập nhật dữ liệu mới từ Blockchain
+    if (refetchHeroes) refetchHeroes(); 
+    setIsProcessing(false); // Kết thúc trạng thái xử lý
+  });
+};
 
   const handleFuse = async (ids) => {
     setIsProcessing(true);
@@ -223,8 +271,10 @@ useEffect(() => {
       objectId: obj.data.objectId,
       name: obj.data.content.fields.name,
       rarity: Number(obj.data.content.fields.rarity),
-      part: Number(obj.data.content.fields.part), // 👈 SỬA: 'part_type' thành 'part' cho khớp với Move
-      url: obj.data.content.fields.url
+      part: Number(obj.data.content.fields.part),
+      url: obj.data.content.fields.url,
+      // ✅ THÊM DÒNG NÀY: Lấy chỉ số cộng thêm từ Move
+      bonus: Number(obj.data.content.fields.bonus || 0) 
     }));
     setInventoryItems(formattedItems);
   }
@@ -368,8 +418,17 @@ const handleSaveEquipment = async (finalPreview) => {
       <div className="relative bg-slate-950 border border-white/20 px-4 py-4 md:px-12 md:py-5 rounded-2xl flex items-center justify-center gap-2 md:gap-4 hover:bg-slate-800 transition-all">
         {/* ✅ Chữ trong nút: mobile text-sm, desktop text-2xl. Thêm whitespace-nowrap để không bị rớt dòng */}
         <span className="text-sm md:text-2xl font-black text-white uppercase tracking-tight md:tracking-tighter whitespace-nowrap">
-          {isProcessing ? "Confirming..." : `FINISH & CLAIM ${accumulatedSets * 10} XP`}
-        </span>
+  {isProcessing ? "Confirming..." : (
+    <>
+      FINISH & CLAIM 
+      <span className="text-lime-400 mx-2">
+        {/* ✅ Lấy (Tổng Str x 10) x Số Set */}
+        {(getHeroTotalStrength(currentHero) * 10) * accumulatedSets}
+      </span> 
+      XP
+    </>
+  )}
+</span>
         <Trophy className="text-lime-400 w-4 h-4 md:w-6 md:h-6" />
       </div>
     </button>
@@ -418,6 +477,7 @@ const handleSaveEquipment = async (finalPreview) => {
         onClaim={handleClaimFarmRewards}   // 👈 TRUYỀN XUỐNG
         isProcessing={isProcessing}
         stamina={displayStamina}
+        strength={getHeroTotalStrength(currentHero)}
   />
 )}
 
