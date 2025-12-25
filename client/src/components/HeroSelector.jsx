@@ -89,7 +89,7 @@ const HeroSelector = ({ heroes, selectedId, onSelect, onMint, nextMintTime, show
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-lime-500/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
               
               <span className="text-[10px] font-black tracking-[0.4em] text-lime-500/60 uppercase mb-3 animate-pulse">
-                Next Mint In
+                Next Summon In
               </span>
               
               <div className="flex items-center gap-3">

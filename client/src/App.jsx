@@ -2,8 +2,8 @@ import {
   useDisconnectWallet, 
   useSuiClientQuery, 
   useCurrentAccount,
-  useSignAndExecuteTransaction, // 👈 THÊM DÒNG NÀY
-  useSuiClient // 👈 THÊM DÒNG NÀY
+  useSignAndExecuteTransaction,
+  useSuiClient 
 } from '@mysten/dapp-kit';
 import { Transaction } from '@mysten/sui/transactions';
 import { useState, useEffect, useMemo } from 'react';
@@ -22,43 +22,33 @@ import FusionZone from './components/FusionZone';
 import Inventory from './components/Inventory';
 import HuntingGrounds from './components/HuntingGrounds';
 import { useToast } from './context/ToastContext';
-
-// --- IMPORT ICONS ---
 import { Trophy, Package, Store, Sparkles, Play, Activity, Skull } from 'lucide-react';
+const SLOTS = ["shield", "cloak", "pants", "shirt", "gloves", "necklace", "sword"];
 
 function App() {
   const client = useSuiClient();
   const toast = useToast();
+  const { account, heroes, mintHero, workout, fuseHeroes, nextMintTime, refetchHeroes } = useGame();
+  const { mutate: disconnect } = useDisconnectWallet();
+  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
   
   // --- 1. ELEMENT CONFIGURATION ---
   const ELEMENT_MAP = {
     0: { label: "METAL", color: "text-yellow-400", border: "border-yellow-500/50", shadow: "shadow-yellow-500/20" },
     1: { label: "WOOD", color: "text-emerald-400", border: "border-emerald-500/50", shadow: "shadow-emerald-500/20" },
-    2: { label: "WATER", color: "text-blue-400", border: "border-blue-500/50", shadow: "shadow-blue-500/20" },
+    2: { label: "WATER", color: "text-blue-400", border: "border-blue-500/50", shadow: "shadow-blue-400/20" },
     3: { label: "FIRE", color: "text-red-400", border: "border-red-500/50", shadow: "shadow-red-500/20" },
     4: { label: "EARTH", color: "text-orange-700", border: "border-orange-900/50", shadow: "shadow-orange-900/20" }
   };
 
-  // --- 2. LOGIC & STATES ---
-const { 
-  account, 
-  heroes, 
-  mintHero, 
-  workout, 
-  fuseHeroes, 
-  nextMintTime, 
-  refetchHeroes // ✅ Lấy từ hook ra
-} = useGame(); 
-  const { mutate: disconnect } = useDisconnectWallet();
-  const { mutate: signAndExecuteTransaction } = useSignAndExecuteTransaction();
+  // ✅ STATE TRANG BỊ VỚI TÊN MỚI
   const [onChainItemsMetadata, setOnChainItemsMetadata] = useState({});
+  const [tempEquipment, setTempEquipment] = useState({ 
+    shield: 'none', cloak: 'none', pants: 'none', shirt: 'none', gloves: 'none', necklace: 'none', sword: 'none' 
+  });
 
-  // ✅ BƯỚC 1: KHAI BÁO TẤT CẢ STATE TRƯỚC
   const [pendingMonsterHP, setPendingMonsterHP] = useState(0);
   const [inventoryItems, setInventoryItems] = useState([]); 
-  const [tempEquipment, setTempEquipment] = useState({ 
-    hat: 'none', shirt: 'none', pants: 'none', shoes: 'none', gloves: 'none', armor: 'none', weapon: 'none' 
-  });
   const [activeTab, setActiveTab] = useState('heroes');
   const [selectedHeroId, setSelectedHeroId] = useState('');
   const [showWalletMenu, setShowWalletMenu] = useState(false);
@@ -69,7 +59,10 @@ const {
   const [displayStamina, setDisplayStamina] = useState(0);
   const [allHeroesGear, setAllHeroesGear] = useState({});
 
-// 2. CẬP NHẬT HÀM TÍNH SỨC MẠNH (Dò cả kho đồ lẫn đồ đang mặc trên xích)
+  const currentHeroId = selectedHeroId || (heroes[0]?.data?.objectId || '');
+  const currentHero = heroes.find(h => h.data.objectId === currentHeroId);
+
+// ✅ SỬA LẠI: Loại bỏ Shirt (Part 3) ra khỏi tổng Strength
 const getHeroTotalStrength = (hero) => {
   const fields = hero?.data?.content?.fields;
   if (!fields) return 1; 
@@ -77,8 +70,8 @@ const getHeroTotalStrength = (hero) => {
   let totalStrength = Number(fields.strength || 1);
 
   Object.entries(tempEquipment).forEach(([slot, itemName]) => {
-    if (itemName !== 'none') {
-      // Ưu tiên tìm bonus từ dữ liệu đã quét trên blockchain, nếu không thấy mới tìm trong kho
+    // 🛑 CHỖ QUAN TRỌNG: Thêm điều kiện slot !== 'shirt'
+    if (itemName !== 'none' && slot !== 'shirt') { 
       const meta = onChainItemsMetadata[slot];
       const bonusOnChain = (meta && meta.name === itemName) ? meta.bonus : 0;
       
@@ -90,77 +83,66 @@ const getHeroTotalStrength = (hero) => {
   });
   return totalStrength;
 };
-
-// ✅ BƯỚC 3: KHỞI TẠO CÁC BIẾN TÍNH TOÁN (Sau khi đã có hàm định nghĩa ở trên)
-  const currentHeroId = selectedHeroId || (heroes[0]?.data?.objectId || '');
-  const currentHero = heroes.find(h => h.data.objectId === currentHeroId);
   
-  
-  // Dòng này bây giờ sẽ chạy đúng vì hàm getHeroTotalStrength đã được khởi tạo ở trên
-  const currentTotalStrength = getHeroTotalStrength(currentHero);
-
-  // Khớp công thức Level Up với file Move của ní
-  const nextLevelXP = currentHero 
-  ? Math.pow((Number(currentHero.data.content?.fields?.level || 0) + 1), 3) * 100 
-  : 0;
+ const currentTotalStrength = getHeroTotalStrength(currentHero);
+  const nextLevelXP = currentHero ? Math.pow((Number(currentHero.data.content?.fields?.level || 0) + 1), 3) * 100 : 0;
 
 
 
-// ✅ 1. CẬP NHẬT HÀM ĐỒNG BỘ: Quét kỹ Rarity và Bonus từ Blockchain
 useEffect(() => {
   const syncGearOnReload = async () => {
     if (!currentHeroId || !client) return;
     try {
       const dynamicFields = await client.getDynamicFields({ parentId: currentHeroId });
-      const onChainGearNames = { hat: 'none', shirt: 'none', pants: 'none', shoes: 'none', gloves: 'none', armor: 'none', weapon: 'none' };
-      const onChainMeta = {};
-      const SLOTS = ["hat", "shirt", "pants", "shoes", "gloves", "armor", "weapon"];
-
-      const promises = dynamicFields.data.map(async (field) => {
-  const partId = parseInt(field.name.value);
-  if (partId >= 0 && partId < 7) {
-    const itemObj = await client.getObject({ id: field.objectId, options: { showContent: true } });
-    const f = itemObj.data?.content?.fields;
-    if (f) {
-      onChainGearNames[SLOTS[partId]] = f.name;
-      // ✅ PHẢI LƯU RARITY VÀO ĐÂY
-      onChainMeta[SLOTS[partId]] = { 
-        name: f.name, 
-        url: f.url, 
-        rarity: Number(f.rarity || 0), // <--- DÒNG NÀY CỰC QUAN TRỌNG
-        bonus: Number(f.bonus || 0) 
+      
+      const onChainGearNames = { 
+        shield: 'none', cloak: 'none', pants: 'none', 
+        shirt: 'none', gloves: 'none', necklace: 'none', sword: 'none' 
       };
-    }
-  }
-});
+      const onChainMeta = {}
+      const promises = dynamicFields.data.map(async (field) => {
+        const partId = parseInt(field.name.value);
+        if (partId >= 0 && partId < 7) {
+          const itemObj = await client.getObject({ id: field.objectId, options: { showContent: true } });
+          const f = itemObj.data?.content?.fields;
+          if (f) {
+            // ✅ Bây giờ SLOTS[3] sẽ trả về đúng "shirt" từ dòng 23 đầu file
+            const correctKey = SLOTS[partId]; 
+            onChainGearNames[correctKey] = f.name;
+            onChainMeta[correctKey] = { 
+              name: f.name, 
+              url: f.url, 
+              rarity: Number(f.rarity || 0), 
+              bonus: Number(f.bonus || 0) 
+            };
+          }
+        }
+      });
 
       await Promise.all(promises);
       setOnChainItemsMetadata(onChainMeta);
-      
-      // Chỉ cập nhật tempEquipment khi dApp không bận load giao dịch thành công
-      if (!isProcessing) {
-        setTempEquipment(onChainGearNames);
-      }
+      if (!isProcessing) setTempEquipment(onChainGearNames);
     } catch (e) { console.error("Sync Error:", e); }
   };
   syncGearOnReload();
-}, [currentHeroId, client, account, heroes]);
-
+}, [currentHeroId, client, account, heroes, isProcessing]);
 
 useEffect(() => {
   const fetchAllHeroesGear = async () => {
     if (!heroes || heroes.length === 0 || !client) return;
     
     const newGearMap = {};
-    const SLOTS = ["hat", "shirt", "pants", "shoes", "gloves", "armor", "weapon"]; // Đưa ra ngoài
+    // ✅ THAY ĐỔI: Phải dùng SLOTS mới theo Part ID 0-6
+    const CURRENT_SLOTS = ["shield", "cloak", "pants", "shirt", "gloves", "necklace", "sword"];
 
     try {
       const gearPromises = heroes.map(async (hero) => {
         const id = hero.data.objectId;
+        // Khởi tạo object trang bị với key mới
         const gear = { 
           body: hero.data.content.fields.url, 
-          hat: 'none', shirt: 'none', pants: 'none', 
-          shoes: 'none', gloves: 'none', armor: 'none', weapon: 'none' 
+          shield: 'none', cloak: 'none', pants: 'none', 
+          shirt: 'none', gloves: 'none', necklace: 'none', sword: 'none' 
         };
 
         const dfs = await client.getDynamicFields({ parentId: id });
@@ -170,7 +152,8 @@ useEffect(() => {
           if (partId >= 0 && partId < 7) {
             const itemObj = await client.getObject({ id: field.objectId, options: { showContent: true } });
             const f = itemObj.data?.content?.fields;
-            if (f) gear[SLOTS[partId]] = f.url; // Lưu link ảnh món đồ thật
+            // ✅ QUAN TRỌNG: Gán đúng Key theo Part ID mới
+            if (f) gear[CURRENT_SLOTS[partId]] = f.url; 
           }
         }
         return { id, gear };
@@ -186,37 +169,47 @@ useEffect(() => {
 }, [heroes, client]);
 
 
-// ✅ EFFECT 2: NHỊP ĐẬP HỒI STAMINA (Hồi máu theo thời gian thực)
-useEffect(() => {
+// 3. LOGIC HỒI STAMINA: Gắn vào Shirt (Part 3)
+  useEffect(() => {
+    const fields = currentHero?.data?.content?.fields;
+    if (!fields) return;
+
+// ✅ SỬA LẠI: Kiểm tra bonus từ cả đồ mặc thật lẫn đồ mặc thử
+const updateStamina = () => {
+  const now = Date.now();
   const fields = currentHero?.data?.content?.fields;
-  if (!fields) return;
+  const lastUpdate = Number(fields.last_update_timestamp || 0);
+  const staminaOnChain = Number(fields.stamina || 0);
+  const maxStamina = 100 + (Number(fields.level || 0) * 15);
 
-  const updateStamina = () => {
-    const now = Date.now();
-    const lastUpdate = Number(fields.last_update_timestamp || 0);
-    const staminaOnChain = Number(fields.stamina || 0);
-    const maxStamina = 100 + (Number(fields.level || 0) * 15);
+  let amountPerMin = 1; // Stamina gốc
+  const shirtName = tempEquipment.shirt; // Món Shirt (Part 3)
 
-    // Tính tốc độ hồi dựa trên giày đang mặc (thực tế hoặc đang thử)
-    let amountPerMin = 1;
-    const equippedShoeName = tempEquipment.shoes;
-    if (equippedShoeName !== 'none') {
-      const shoeItem = inventoryItems.find(i => i.name === equippedShoeName);
-      if (shoeItem) amountPerMin += Number(shoeItem.bonus || 0);
-    }
+  if (shirtName !== 'none') {
+    // 1. Kiểm tra bonus từ áo ĐÃ MẶC THẬT (Quét từ blockchain)
+    const meta = onChainItemsMetadata.shirt;
+    const bonusOnChain = (meta && meta.name === shirtName) ? meta.bonus : 0;
+    
+    // 2. Kiểm tra bonus từ áo ĐANG MẶC THỬ (Tìm trong kho đồ)
+    const itemInInventory = inventoryItems.find(i => i.name === shirtName);
+    const bonusInInv = itemInInventory ? Number(itemInInventory.bonus || 0) : 0;
 
-    const timePassed = Math.max(0, now - lastUpdate);
-    const intervals = Math.floor(timePassed / 60000);
-    const totalStamina = Math.min(maxStamina, staminaOnChain + (intervals * amountPerMin));
+    // Lấy bonus lớn nhất (Đảm bảo dù mặc thật hay đang thử đều được cộng)
+    amountPerMin += Math.max(bonusOnChain, bonusInInv); 
+  }
 
-    setDisplayStamina(totalStamina); // Cập nhật số hiển thị trên màn hình
-    setStaminaProgress(totalStamina >= maxStamina ? 100 : ((timePassed % 60000) / 60000) * 100);
-  };
+  const timePassed = Math.max(0, now - lastUpdate);
+  const intervals = Math.floor(timePassed / 60000); // 60 giây hồi 1 lần
+  const totalStamina = Math.min(maxStamina, staminaOnChain + (intervals * amountPerMin));
 
-  updateStamina();
-  const interval = setInterval(updateStamina, 1000); // Chạy mỗi giây
-  return () => clearInterval(interval);
-}, [currentHero, tempEquipment.shoes, inventoryItems]);
+  setDisplayStamina(totalStamina);
+  setStaminaProgress(totalStamina >= maxStamina ? 100 : ((timePassed % 60000) / 60000) * 100);
+};
+
+    updateStamina();
+    const interval = setInterval(updateStamina, 1000);
+    return () => clearInterval(interval);
+  }, [currentHero, tempEquipment.shirt, inventoryItems, onChainItemsMetadata]);
 
 
 
@@ -276,28 +269,25 @@ const getUrlByName = (name) => {
   return inventoryItems.find(item => item.name === name)?.url || 'none';
 };
 
-// 4. CẬP NHẬT PREVIEW URLS (Lấy ảnh từ meta đã quét)
-const previewUrls = useMemo(() => {
-  const getUrl = (slot, name) => {
-    if (name === 'none') return 'none';
-    // Nếu là đồ đang mặc thật trên xích, lấy URL từ metadata đã quét
-    if (onChainItemsMetadata[slot]?.name === name) return onChainItemsMetadata[slot].url;
-    // Nếu là đồ đang mặc thử từ kho, tìm trong inventoryItems
-    return inventoryItems.find(item => item.name === name)?.url || 'none';
-  };
+// 4. PREVIEW URLS CHO AVATAR
+  const previewUrls = useMemo(() => {
+    const getUrl = (slot, name) => {
+      if (name === 'none') return 'none';
+      if (onChainItemsMetadata[slot]?.name === name) return onChainItemsMetadata[slot].url;
+      return inventoryItems.find(item => item.name === name)?.url || 'none';
+    };
 
-  return {
-    body: currentHero?.data?.content?.fields?.url || 'none',
-    hat: getUrl('hat', tempEquipment.hat),
-    shirt: getUrl('shirt', tempEquipment.shirt),
-    pants: getUrl('pants', tempEquipment.pants),
-    shoes: getUrl('shoes', tempEquipment.shoes),
-    gloves: getUrl('gloves', tempEquipment.gloves),
-    armor: getUrl('armor', tempEquipment.armor),
-    weapon: getUrl('weapon', tempEquipment.weapon),
-  };
-}, [currentHero, tempEquipment, inventoryItems, onChainItemsMetadata]);
-
+    return {
+      body: currentHero?.data?.content?.fields?.url || 'none',
+      shield: getUrl('shield', tempEquipment.shield),
+      cloak: getUrl('cloak', tempEquipment.cloak),
+      pants: getUrl('pants', tempEquipment.pants),
+      shirt: getUrl('shirt', tempEquipment.shirt),
+      gloves: getUrl('gloves', tempEquipment.gloves),
+      necklace: getUrl('necklace', tempEquipment.necklace),
+      sword: getUrl('sword', tempEquipment.sword),
+    };
+  }, [currentHero, tempEquipment, inventoryItems, onChainItemsMetadata]);
 
 
 
@@ -312,56 +302,37 @@ const previewUrls = useMemo(() => {
   ];
 
 // --- TRONG App.jsx: handleClaim cho Squat ---
-
 const handleClaim = () => {
-  if (accumulatedSets === 0 || isProcessing) return;
-  setIsProcessing(true);
-
-  workout(currentHeroId, accumulatedSets, (response) => {
-    // Không reset ngay lập tức, đợi dữ liệu blockchain về
-    setTimeout(async () => {
-      try {
-        const txData = await client.getTransactionBlock({
-          digest: response.digest,
-          options: { showEvents: true }
-        });
-
-        const dropEvent = txData.events?.find(e => e.type.toLowerCase().includes("itemdropped"));
-        if (dropEvent && dropEvent.parsedJson) {
-          const { rarity, name, url } = dropEvent.parsedJson;
-          toast.showLoot(Number(rarity), name, url);
-        } else {
-          // Tính XP ảo để hiện thông báo cho vui, XP thật đã tăng trên xích
-          const xp = (getHeroTotalStrength(currentHero) * 10) * accumulatedSets;
-          toast.success(`Training Complete! Gained ${xp} XP.`); 
-        }
-        
-        // ✅ CẬP NHẬT LẠI TOÀN BỘ DỮ LIỆU
-        await refetchItems(); 
-        await refetchHeroes(); 
-        
-        setAccumulatedSets(0);
-        setIsWorkoutStarted(false);
-      } catch (e) {
-        console.error("Sync Error:", e);
-      } finally {
-        setIsProcessing(false);
-      }
-    }, 2000); // Đợi Indexer blockchain cập nhật hoàn toàn
-  });
-};
+    if (accumulatedSets === 0 || isProcessing) return;
+    setIsProcessing(true);
+    workout(currentHeroId, accumulatedSets, (response) => {
+      setTimeout(async () => {
+        try {
+          const txData = await client.getTransactionBlock({ digest: response.digest, options: { showEvents: true } });
+          const dropEvent = txData.events?.find(e => e.type.toLowerCase().includes("itemdropped"));
+          if (dropEvent && dropEvent.parsedJson) {
+            toast.showLoot(Number(dropEvent.parsedJson.rarity), dropEvent.parsedJson.name, dropEvent.parsedJson.url);
+          } else {
+            const xp = (getHeroTotalStrength(currentHero) * 10) * accumulatedSets;
+            toast.success(`Training Complete! Gained ${xp} XP.`); 
+          }
+          await refetchItems(); 
+          await refetchHeroes(); 
+          setAccumulatedSets(0);
+          setIsWorkoutStarted(false);
+        } catch (e) { console.error(e); }
+        finally { setIsProcessing(false); }
+      }, 2000);
+    });
+  };
 
 
 
-  const handleFuse = async (ids) => {
-    setIsProcessing(true);
-    try {
-      await fuseHeroes(ids[0], ids[1], ids[2]); 
-      setActiveTab('heroes');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+const handleFuse = async (ids) => {
+    setIsProcessing(true);
+    try { await fuseHeroes(ids[0], ids[1], ids[2]); setActiveTab('heroes'); }
+    finally { setIsProcessing(false); }
+  };
 
 const handleSlayMonster = (monsterMaxHP) => {
     setPendingMonsterHP(prev => prev + monsterMaxHP);
@@ -370,94 +341,83 @@ const handleSlayMonster = (monsterMaxHP) => {
 // --- Inside App.jsx Logic & States section ---
 
 // 1. Fetch Item Objects (Gear/NFTs) from Sui
-const { data: itemData, refetch: refetchItems } = useSuiClientQuery('getOwnedObjects', { // ✅ THÊM refetchItems
-  owner: account?.address,
-  filter: { StructType: `${PACKAGE_ID}::game::Item` },
-  options: { showContent: true },
-}, { enabled: !!account });
+const { data: itemData, refetch: refetchItems } = useSuiClientQuery('getOwnedObjects', {
+    owner: account?.address,
+    filter: { StructType: `${PACKAGE_ID}::game::Item` },
+    options: { showContent: true },
+  }, { enabled: !!account });
 
 // 2. Sync fetched data to inventoryItems state
 useEffect(() => {
-  if (itemData?.data) {
-    const formattedItems = itemData.data.map(obj => ({
-      objectId: obj.data.objectId,
-      name: obj.data.content.fields.name,
-      rarity: Number(obj.data.content.fields.rarity),
-      part: Number(obj.data.content.fields.part),
-      url: obj.data.content.fields.url,
-      // ✅ THÊM DÒNG NÀY: Lấy chỉ số cộng thêm từ Move
-      bonus: Number(obj.data.content.fields.bonus || 0) 
-    }));
-    setInventoryItems(formattedItems);
-  }
-}, [itemData]);
-
-
-
-const handleSaveEquipment = async (finalPreview) => {
-  if (!currentHeroId || isProcessing) return;
-
-  setIsProcessing(true); // Bắt đầu xoay vòng
-  try {
-    const txb = new Transaction();
-    const SLOTS = ["hat", "shirt", "pants", "shoes", "gloves", "armor", "weapon"];
-
-    // Phân loại tháo/mặc
-    SLOTS.forEach((slotName, index) => {
-      if (onChainItemsMetadata[slotName] && finalPreview[slotName] === 'none') {
-        txb.moveCall({ target: `${PACKAGE_ID}::game::unequip_item`, arguments: [txb.object(currentHeroId), txb.pure.u8(index)] });
-      }
-    });
-
-    const itemObjectIdsToEquip = Object.entries(finalPreview)
-      .filter(([slot, name]) => name !== 'none' && onChainItemsMetadata[slot]?.name !== name)
-      .map(([slot, name]) => inventoryItems.find(item => item.name === name)?.objectId)
-      .filter(id => !!id);
-
-    if (itemObjectIdsToEquip.length > 0) {
-      txb.moveCall({
-        target: `${PACKAGE_ID}::game::equip_multiple_items`,
-        arguments: [txb.object(currentHeroId), txb.makeMoveVec({ elements: itemObjectIdsToEquip.map(id => txb.object(id)) })],
-      });
+    if (itemData?.data) {
+      const formattedItems = itemData.data.map(obj => ({
+        objectId: obj.data.objectId,
+        name: obj.data.content.fields.name,
+        rarity: Number(obj.data.content.fields.rarity),
+        part: Number(obj.data.content.fields.part),
+        url: obj.data.content.fields.url,
+        bonus: Number(obj.data.content.fields.bonus || 0) 
+      }));
+      setInventoryItems(formattedItems);
     }
+  }, [itemData]);
 
-    signAndExecuteTransaction({ transaction: txb }, {
-      onSuccess: () => {
-        toast.success("Syncing with Blockchain...");
-        // ✅ CHỜ INDEXER (4 giây) - Đảm bảo đồ đã vào Hero
-        setTimeout(async () => {
-          try {
-            await refetchItems(); 
-            // ✅ SỬA LỖI: Dùng đúng tên hàm refetch từ hook
-            if (refetchHeroes) await refetchHeroes(); 
-          } catch (err) { console.error(err); }
-          finally {
-            setIsProcessing(false); // ✅ GIẢI PHÓNG NÚT BẤM
-          }
-        }, 4000); 
-      },
-      onError: (err) => {
-        console.error("TX Error:", err);
-        toast.error("Save Failed!");
-        setIsProcessing(false); // Giải phóng nút nếu lỗi
+
+
+// 5. LƯU TRANG BỊ LÊN CHUỖI
+  const handleSaveEquipment = async (finalPreview) => {
+    if (!currentHeroId || isProcessing) return;
+    setIsProcessing(true);
+    try {
+      const txb = new Transaction();
+
+      SLOTS.forEach((slotName, index) => {
+        if (onChainItemsMetadata[slotName] && finalPreview[slotName] === 'none') {
+          txb.moveCall({ target: `${PACKAGE_ID}::game::unequip_item`, arguments: [txb.object(currentHeroId), txb.pure.u8(index)] });
+        }
+      });
+
+      const itemObjectIdsToEquip = Object.entries(finalPreview)
+        .filter(([slot, name]) => name !== 'none' && onChainItemsMetadata[slot]?.name !== name)
+        .map(([slot, name]) => inventoryItems.find(item => item.name === name)?.objectId)
+        .filter(id => !!id);
+
+      if (itemObjectIdsToEquip.length > 0) {
+        txb.moveCall({
+          target: `${PACKAGE_ID}::game::equip_multiple_items`,
+          arguments: [txb.object(currentHeroId), txb.makeMoveVec({ elements: itemObjectIdsToEquip.map(id => txb.object(id)) })],
+        });
       }
-    });
-  } catch (error) { setIsProcessing(false); }
-};
+
+      signAndExecuteTransaction({ transaction: txb }, {
+        onSuccess: () => {
+          toast.success("Syncing with Blockchain...");
+          setTimeout(async () => {
+            try {
+              await refetchItems(); 
+              if (refetchHeroes) await refetchHeroes(); 
+            } catch (err) { console.error(err); }
+            finally { setIsProcessing(false); }
+          }, 4000); 
+        },
+        onError: () => { toast.error("Save Failed!"); setIsProcessing(false); }
+      });
+    } catch (error) { setIsProcessing(false); }
+  };
 
 
-// ✅ SỬA LẠI: Lấy trực tiếp từ State đã quét đồ thay vì gán cứng 'none'
+// ✅ SỬA LẠI: Đồng bộ Key trang bị mới cho Hero mới Mint
 const allHeroesEquipmentMap = useMemo(() => {
-  const map = { ...allHeroesGear }; // Copy dữ liệu từ state đã quét được
+  const map = { ...allHeroesGear };
 
-  // Đảm bảo những con hero mới mint chưa có trong state vẫn hiện được Body (ảnh gốc)
   heroes?.forEach((hero) => {
     const id = hero.data.objectId;
     if (!map[id]) {
       map[id] = {
         body: hero.data.content.fields.url,
-        hat: 'none', shirt: 'none', pants: 'none', 
-        shoes: 'none', gloves: 'none', armor: 'none', weapon: 'none'
+        // ✅ ĐỒNG BỘ KEY MỚI
+        shield: 'none', cloak: 'none', pants: 'none', 
+        shirt: 'none', gloves: 'none', necklace: 'none', sword: 'none'
       };
     }
   });
@@ -513,7 +473,8 @@ const allHeroesEquipmentMap = useMemo(() => {
         totalStrength={currentTotalStrength}
         stamina={displayStamina}
         staminaProgress={staminaProgress}
-        tempEquipment={previewUrls} 
+        tempEquipment={previewUrls}
+        isAnimated={true}
         onChainItemsMetadata={onChainItemsMetadata}
         inventoryItems={inventoryItems}
         elementInfo={ELEMENT_MAP[currentHero.data.content?.fields?.element] || ELEMENT_MAP[0]}

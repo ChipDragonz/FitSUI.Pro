@@ -68,9 +68,16 @@ const FusionZone = ({ heroes, onFuse, isProcessing, allHeroesEquipment = {} }) =
                   const heroId = hero.data.objectId;
                   // ✅ 2. LẤY DATA TRANG BỊ CHO TỪNG CON
                   // Nếu dApp của ní chưa lưu mapping này, ní cần sync nó ở App.jsx
-                  const heroEquipment = allHeroesEquipment[heroId] || { 
-                    body: hero.data.content.fields.url 
-                  };
+                 const heroEquipment = allHeroesEquipment[heroId] || { 
+  body: hero.data.content.fields.url,
+  shield: 'none',   // Đổi từ hat
+  cloak: 'none',    // Đổi từ armor
+  pants: 'none', 
+  shirt: 'none', 
+  gloves: 'none', 
+  necklace: 'none', // Đổi từ shoes
+  sword: 'none'     // Đổi từ weapon
+};
 
                   return (
                     <motion.div 
@@ -87,7 +94,11 @@ const FusionZone = ({ heroes, onFuse, isProcessing, allHeroesEquipment = {} }) =
                       {/* ✅ 3. THAY THẾ <IMG> BẰNG <HEROAVATAR> */}
                       <div className="relative aspect-square rounded-xl overflow-hidden bg-black/60 mb-3 border border-white/5 flex items-center justify-center">
                         <div className="w-[110%] h-[110%]"> {/* Scale nhẹ để Hero hiện rõ hơn trong ô nhỏ */}
-                          <HeroAvatar equipment={heroEquipment} />
+                          <HeroAvatar
+                          isAnimated={false} 
+  equipment={heroEquipment} 
+  element={hero.data.content?.fields?.element || 0} 
+/>
                         </div>
                         <div className="absolute top-2 right-2 z-50 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded text-[9px] font-black text-lime-400 border border-white/10">
                           LVL {hero.data.content.fields.level}
@@ -159,7 +170,11 @@ const FusionZone = ({ heroes, onFuse, isProcessing, allHeroesEquipment = {} }) =
             >
               Reset Selection
             </button>
+            
           )}
+          <p className="text-[8px] text-red-500/50 uppercase font-black mt-4">
+  Warning: Equipped items on materials will be destroyed!
+</p>
         </div>
       </div>
     </div>

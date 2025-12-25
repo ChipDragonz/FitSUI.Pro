@@ -1,6 +1,5 @@
 import React from 'react';
-import { Box, Zap, CheckCircle2, XCircle, Save } from 'lucide-react';
-import HeroCard from './HeroCard';
+import { Box, Zap, Activity, CheckCircle2, XCircle, Save } from 'lucide-react';import HeroCard from './HeroCard';
 import HeroSelector from './HeroSelector';
 
 const Inventory = ({ 
@@ -18,8 +17,8 @@ const Inventory = ({
   totalStrength,
   onChainItemsMetadata
 }) => {
-  const PART_NAMES = ["Hat", "Shirt", "Pants", "Shoes", "Gloves", "Armor", "Sword"];
-  const SLOTS = ["hat", "shirt", "pants", "shoes", "gloves", "armor", "weapon"]; 
+  const PART_NAMES = ["Shield", "Cloak", "Pants", "Shirt", "Gloves", "Necklace", "Sword"];
+  const SLOTS = ["shield", "cloak", "pants", "shirt", "gloves", "necklace", "sword"];
 
   // ✅ 1. CẤU HÌNH PHÁT SÁNG CHO KHO ĐỒ (Aura & Glow)
   const RARITY_CONFIG = [
@@ -85,7 +84,8 @@ const Inventory = ({
                 nextLevelXP={nextLevelXP}
                 totalStrength={totalStrength}
                 hideStats={true} 
-                isInventoryMode={true} 
+                isInventoryMode={true}
+                isAnimated={false} 
                 onSlotClick={(slotId) => onToggleEquip(slotId, tempEquipment[slotId])} 
               />
 
@@ -157,9 +157,18 @@ const Inventory = ({
                         />
 
                         <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-slate-950/90 backdrop-blur-md border border-white/10 flex items-center gap-1 shadow-lg z-20">
-                          <Zap size={8} className="text-yellow-400 fill-yellow-400" />
-                          <span className="text-[9px] font-black text-white italic tracking-tighter">+{ownedItems[0].bonus} STR</span>
-                        </div>
+  {partId === 3 ? ( // Nếu là món Shirt (Part 3)
+    <>
+      <Activity size={8} className="text-lime-400 fill-lime-400" />
+      <span className="text-[9px] font-black text-white italic tracking-tighter">+{ownedItems[0].bonus} REGEN</span>
+    </>
+  ) : ( // Các món khác giữ nguyên STR
+    <>
+      <Zap size={8} className="text-yellow-400 fill-yellow-400" />
+      <span className="text-[9px] font-black text-white italic tracking-tighter">+{ownedItems[0].bonus} STR</span>
+    </>
+  )}
+</div>
 
                         <div className="absolute inset-0 bg-slate-950/90 opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col items-center justify-center gap-2 p-1 rounded-xl z-40">
                           <button 
@@ -171,7 +180,12 @@ const Inventory = ({
                         </div>
                       </>
                     )}
-                    {!hasItem && <Box className="w-5 h-5 text-gray-800" />}
+                    {!hasItem && (
+  <div className="flex flex-col items-center gap-1 opacity-20">
+    <Box className="w-5 h-5 text-gray-400" />
+    <span className="text-[7px] font-black uppercase tracking-tighter">{name}</span>
+  </div>
+)}
                   </div>
                 );
               })}

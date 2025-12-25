@@ -14,8 +14,8 @@ const HeroCard = ({
 
   tempEquipment, onChainItemsMetadata, inventoryItems = [],
 
-  elementInfo, nextLevelXP, hideStats = false, isInventoryMode = false, onSlotClick
-
+  elementInfo,isAnimated = false, nextLevelXP, hideStats = false, isInventoryMode = false, onSlotClick
+  
 }) => {
 
   if (!hero || !hero.content || !hero.content.fields) return null;
@@ -60,22 +60,15 @@ const HeroCard = ({
 
 
 
+// ✅ CẬP NHẬT THỨ TỰ SLOT & TÊN MỚI (Khớp 100% với Move và Inventory)
   const EQUIPMENT_SLOTS = [
-
-    { id: 'hat', label: 'HEAD', pos: 'top-[4%] left-[4%]' },
-
-    { id: 'armor', label: 'ARMOR', pos: 'top-[4%] right-[4%]' },
-
-    { id: 'shirt', label: 'SHIRT', pos: 'top-[35%] left-[1%]' },
-
-    { id: 'gloves', label: 'GLOVES', pos: 'top-[35%] right-[1%]' },
-
-    { id: 'weapon', label: 'WEAPON', pos: 'top-[62%] left-[4%]' },
-
-    { id: 'shoes', label: 'SHOES', pos: 'top-[62%] right-[4%]' },
-
-    { id: 'pants', label: 'PANTS', pos: 'bottom-[12%] left-1/2 -translate-x-1/2' },
-
+    { id: 'shield',   label: 'SHIELD',   pos: 'top-[4%] left-[4%]' },      // Part 0
+    { id: 'cloak',    label: 'CLOAK',    pos: 'top-[4%] right-[4%]' },     // Part 1
+    { id: 'shirt',    label: 'SHIRT+',   pos: 'top-[35%] left-[1%]' },     // Part 3 (Món hồi Stamina)
+    { id: 'gloves',   label: 'GLOVES',   pos: 'top-[35%] right-[1%]' },    // Part 4
+    { id: 'necklace', label: 'NECKLACE', pos: 'top-[62%] left-[4%]' },     // Part 5
+    { id: 'sword',    label: 'SWORD',    pos: 'top-[62%] right-[4%]' },    // Part 6
+    { id: 'pants',    label: 'PANTS',    pos: 'bottom-[12%] left-1/2 -translate-x-1/2' }, // Part 2
   ];
 
 
@@ -105,7 +98,7 @@ const HeroCard = ({
 
 
   const config = elementInfo || { label: 'METAL', color: 'text-yellow-400', border: 'border-yellow-500/50' };
-
+  
 
 
   return (
@@ -116,7 +109,11 @@ const HeroCard = ({
 
          <div className={`absolute inset-0 flex items-center justify-center pointer-events-none transition-all duration-700 ${isInventoryMode ? 'scale-[0.72] translate-y-0' : 'scale-[1.0] translate-y-5'}`}>
 
-            <HeroAvatar equipment={tempEquipment} />
+            <HeroAvatar 
+  equipment={tempEquipment} 
+  element={hero.content?.fields?.element || 0} 
+  isAnimated={isAnimated}
+/>
 
          </div>
 

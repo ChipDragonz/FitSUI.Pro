@@ -96,7 +96,11 @@ const HuntingGrounds = ({
             transition={{ duration: 0.2 }}
             className="w-full h-full flex items-end md:items-center justify-center"
           >
-            <HeroAvatar equipment={previewUrls} />
+            <HeroAvatar 
+            isAnimated={false}
+  equipment={previewUrls} 
+  element={hero?.content?.fields?.element || 0} 
+/>
           </motion.div>
         </div>
 
