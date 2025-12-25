@@ -67,6 +67,7 @@ const {
   const [isProcessing, setIsProcessing] = useState(false); 
   const [staminaProgress, setStaminaProgress] = useState(0);
   const [displayStamina, setDisplayStamina] = useState(0);
+  const [allHeroesGear, setAllHeroesGear] = useState({});
 
 // 2. CẬP NHẬT HÀM TÍNH SỨC MẠNH (Dò cả kho đồ lẫn đồ đang mặc trên xích)
 const getHeroTotalStrength = (hero) => {
@@ -93,6 +94,7 @@ const getHeroTotalStrength = (hero) => {
 // ✅ BƯỚC 3: KHỞI TẠO CÁC BIẾN TÍNH TOÁN (Sau khi đã có hàm định nghĩa ở trên)
   const currentHeroId = selectedHeroId || (heroes[0]?.data?.objectId || '');
   const currentHero = heroes.find(h => h.data.objectId === currentHeroId);
+  
   
   // Dòng này bây giờ sẽ chạy đúng vì hàm getHeroTotalStrength đã được khởi tạo ở trên
   const currentTotalStrength = getHeroTotalStrength(currentHero);
@@ -143,6 +145,45 @@ useEffect(() => {
   };
   syncGearOnReload();
 }, [currentHeroId, client, account, heroes]);
+
+
+useEffect(() => {
+  const fetchAllHeroesGear = async () => {
+    if (!heroes || heroes.length === 0 || !client) return;
+    
+    const newGearMap = {};
+    const SLOTS = ["hat", "shirt", "pants", "shoes", "gloves", "armor", "weapon"]; // Đưa ra ngoài
+
+    try {
+      const gearPromises = heroes.map(async (hero) => {
+        const id = hero.data.objectId;
+        const gear = { 
+          body: hero.data.content.fields.url, 
+          hat: 'none', shirt: 'none', pants: 'none', 
+          shoes: 'none', gloves: 'none', armor: 'none', weapon: 'none' 
+        };
+
+        const dfs = await client.getDynamicFields({ parentId: id });
+        
+        for (const field of dfs.data) {
+          const partId = parseInt(field.name.value);
+          if (partId >= 0 && partId < 7) {
+            const itemObj = await client.getObject({ id: field.objectId, options: { showContent: true } });
+            const f = itemObj.data?.content?.fields;
+            if (f) gear[SLOTS[partId]] = f.url; // Lưu link ảnh món đồ thật
+          }
+        }
+        return { id, gear };
+      });
+
+      const results = await Promise.all(gearPromises);
+      results.forEach(res => { newGearMap[res.id] = res.gear; });
+      setAllHeroesGear(newGearMap);
+    } catch (e) { console.error("Fusion Gear Sync Error:", e); }
+  };
+
+  fetchAllHeroesGear();
+}, [heroes, client]);
 
 
 // ✅ EFFECT 2: NHỊP ĐẬP HỒI STAMINA (Hồi máu theo thời gian thực)
@@ -405,7 +446,24 @@ const handleSaveEquipment = async (finalPreview) => {
 };
 
 
+// ✅ SỬA LẠI: Lấy trực tiếp từ State đã quét đồ thay vì gán cứng 'none'
+const allHeroesEquipmentMap = useMemo(() => {
+  const map = { ...allHeroesGear }; // Copy dữ liệu từ state đã quét được
 
+  // Đảm bảo những con hero mới mint chưa có trong state vẫn hiện được Body (ảnh gốc)
+  heroes?.forEach((hero) => {
+    const id = hero.data.objectId;
+    if (!map[id]) {
+      map[id] = {
+        body: hero.data.content.fields.url,
+        hat: 'none', shirt: 'none', pants: 'none', 
+        shoes: 'none', gloves: 'none', armor: 'none', weapon: 'none'
+      };
+    }
+  });
+
+  return map;
+}, [heroes, allHeroesGear]);
 
 
   const toggleEquip = (slot, itemName) => {
@@ -555,8 +613,13 @@ const handleSaveEquipment = async (finalPreview) => {
 
             {/* TAB 2: FUSION LAB */}
             {activeTab === 'fusion' && (
-              <FusionZone heroes={heroes} onFuse={handleFuse} isProcessing={isProcessing} />
-            )}
+  <FusionZone 
+    heroes={heroes} 
+    onFuse={handleFuse} 
+    isProcessing={isProcessing} 
+    allHeroesEquipment={allHeroesEquipmentMap} // ✅ Truyền biến đã định nghĩa ở Bước 1
+  />
+)}
 
             {/* TAB 3: INVENTORY VAULT */}
 {activeTab === 'inventory' && (

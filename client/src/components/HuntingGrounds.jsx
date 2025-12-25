@@ -11,11 +11,19 @@ const MONSTER_DB = [
   { id: 'dragon', name: "Sui Dragon", hp: 200, chance: 2, url: "https://beige-urgent-clam-163.mypinata.cloud/ipfs/bafybeif4yccdffgymda3r4euopnnkkjlxvxnkgj6ayaavmwzasn7uybw44", color: "text-yellow-400", aura: "bg-yellow-400/50", scale: 1.5 }
 ];
 
-// ✅ 1. Nhận trực tiếp prop 'strength' (số 4) từ App.jsx
-const HuntingGrounds = ({ hero, previewUrls, onSlay, pendingMonsterHP, onClaim, isProcessing, stamina, strength }) => {
+const HuntingGrounds = ({
+  hero,
+  previewUrls,
+  onSlay,
+  pendingMonsterHP,
+  onClaim,
+  isProcessing,
+  stamina,
+  strength
+}) => {
   const heroFields = hero?.content?.fields || {};
   const heroLevel = Number(heroFields.level || 0);
-  const maxStamina = 100 + (heroLevel * 15);
+  const maxStamina = 100 + heroLevel * 15;
 
   const [currentMonster, setCurrentMonster] = useState(MONSTER_DB[0]);
   const [monsterHP, setMonsterHP] = useState(MONSTER_DB[0].hp);
@@ -23,13 +31,11 @@ const HuntingGrounds = ({ hero, previewUrls, onSlay, pendingMonsterHP, onClaim, 
   const [isAttacking, setIsAttacking] = useState(false);
   const [damagePopup, setDamagePopup] = useState(null);
 
-  // ✅ 2. TÍNH TOÁN DỰA TRÊN PROP STRENGTH (Số 4)
-  // Hits to kill = Làm tròn lên của (HP / 4)
   const currentMonsterHits = Math.ceil(currentMonster.hp / strength);
   const accumulatedHits = Math.ceil(pendingMonsterHP / strength);
-  
+
   const isOutOfStamina = stamina < currentMonsterHits;
-  const isMonsterTooHeavy = (accumulatedHits + currentMonsterHits) > maxStamina;
+  const isMonsterTooHeavy = accumulatedHits + currentMonsterHits > maxStamina;
 
   const getRandomMonster = () => {
     const totalWeight = MONSTER_DB.reduce((sum, m) => sum + m.chance, 0);
@@ -45,15 +51,18 @@ const HuntingGrounds = ({ hero, previewUrls, onSlay, pendingMonsterHP, onClaim, 
     if (stamina < currentMonsterHits) return;
 
     setIsAttacking(true);
-    setDamagePopup(strength); // Hiện Popup sát thương là 4
+    setDamagePopup(strength);
+
     const newHP = Math.max(0, monsterHP - strength);
     setMonsterHP(newHP);
 
     setTimeout(() => {
       setIsAttacking(false);
       setDamagePopup(null);
+
       if (newHP === 0) {
         onSlay(currentMonster.hp);
+
         setTimeout(() => {
           const nextMonster = getRandomMonster();
           setCurrentMonster(nextMonster);
@@ -67,37 +76,60 @@ const HuntingGrounds = ({ hero, previewUrls, onSlay, pendingMonsterHP, onClaim, 
   const hpPercentage = (monsterHP / currentMonster.hp) * 100;
 
   return (
-    <div className="flex flex-col gap-6 md:gap-12 py-4 md:py-10 animate-fade-in max-w-6xl mx-auto px-2">
-      
+    <div className="flex flex-col gap-6 md:gap-12 py-4 md:py-10 max-w-6xl mx-auto px-2 animate-fade-in">
+
       {/* CHIẾN TRƯỜNG */}
       <div className="relative h-[320px] md:h-[450px] w-full flex items-center justify-between px-4 md:px-10 bg-slate-950/20 rounded-[2rem] md:rounded-[3rem] border border-white/5 overflow-hidden shadow-inner">
+
         <div className="absolute inset-0 opacity-20 pointer-events-none">
-            <div className="absolute bottom-0 w-full h-32 bg-gradient-to-t from-lime-500/20 to-transparent"></div>
+          <div className="absolute bottom-0 w-full h-32 bg-gradient-to-t from-lime-500/20 to-transparent" />
         </div>
 
-        {/* HERO */}
-        <div className="relative w-1/2 md:w-1/3 h-full flex items-center justify-center">
-          <motion.div animate={isAttacking ? { x: [0, 60, 0] } : {}} transition={{ duration: 0.2 }} className="w-full h-full">
+        {/* HERO (SAFE FIX MOBILE) */}
+        <div className="
+          relative w-1/2 md:w-1/3 h-full
+          flex items-end md:items-center justify-center
+          pb-16 md:pb-0
+        ">
+          <motion.div
+            animate={isAttacking ? { x: [0, 60, 0] } : {}}
+            transition={{ duration: 0.2 }}
+            className="w-full h-full flex items-end md:items-center justify-center"
+          >
             <HeroAvatar equipment={previewUrls} />
           </motion.div>
         </div>
 
         <div className="z-10 flex flex-col items-center gap-1 scale-75 md:scale-100 opacity-40">
-            <Swords size={24} className="text-red-500" />
+          <Swords size={24} className="text-red-500" />
         </div>
 
-        {/* QUÁI VẬT */}
+        {/* QUÁI */}
         <div className="relative w-1/2 md:w-1/3 h-full flex flex-col items-center justify-center">
           <div className="absolute top-10 w-32 md:w-48 z-50">
             <div className="flex justify-between items-center mb-1">
-              <span className={`font-black text-[8px] md:text-[10px] uppercase truncate ${currentMonster.color}`}>{currentMonster.name}</span>
-              <span className="text-white font-black text-[8px] tracking-tighter">{monsterHP}/{currentMonster.hp}</span>
+              <span className={`font-black text-[8px] md:text-[10px] uppercase truncate ${currentMonster.color}`}>
+                {currentMonster.name}
+              </span>
+              <span className="text-white font-black text-[8px]">
+                {monsterHP}/{currentMonster.hp}
+              </span>
             </div>
+
             <div className="relative h-2 w-full bg-black/60 rounded-full border border-white/10">
-              <motion.div animate={{ width: `${hpPercentage}%` }} className="h-full bg-gradient-to-r from-red-600 to-orange-500 rounded-full" />
+              <motion.div
+                animate={{ width: `${hpPercentage}%` }}
+                className="h-full bg-gradient-to-r from-red-600 to-orange-500 rounded-full"
+              />
+
               <AnimatePresence>
                 {damagePopup && (
-                  <motion.div initial={{ opacity: 0, y: 0 }} animate={{ opacity: 1, y: -25, scale: 1.2 }} exit={{ opacity: 0 }} className="absolute inset-0 flex items-center justify-center text-red-500 font-black text-2xl md:text-3xl italic drop-shadow-[0_0_8px_rgba(239,68,68,1)]">
+                  <motion.div
+                    initial={{ opacity: 0, y: 0 }}
+                    animate={{ opacity: 1, y: -25, scale: 1.2 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 flex items-center justify-center text-red-500 font-black text-2xl md:text-3xl italic drop-shadow-[0_0_8px_rgba(239,68,68,1)]"
+                  >
                     -{damagePopup}
                   </motion.div>
                 )}
@@ -106,9 +138,27 @@ const HuntingGrounds = ({ hero, previewUrls, onSlay, pendingMonsterHP, onClaim, 
           </div>
 
           <AnimatePresence mode="wait">
-            <motion.div key={spawnKey} initial={{ opacity: 0, scale: 0 }} animate={monsterHP <= 0 ? { opacity: 0, scale: 0, rotate: 180 } : { opacity: 1, scale: currentMonster.scale, y: [0, -10, 0] }} transition={monsterHP <= 0 ? { duration: 0.5 } : { y: { repeat: Infinity, duration: 2, ease: "easeInOut" } }} className="relative flex items-center justify-center">
+            <motion.div
+              key={spawnKey}
+              initial={{ opacity: 0, scale: 0 }}
+              animate={
+                monsterHP <= 0
+                  ? { opacity: 0, scale: 0, rotate: 180 }
+                  : { opacity: 1, scale: currentMonster.scale, y: [0, -10, 0] }
+              }
+              transition={
+                monsterHP <= 0
+                  ? { duration: 0.5 }
+                  : { y: { repeat: Infinity, duration: 2, ease: "easeInOut" } }
+              }
+              className="relative flex items-center justify-center"
+            >
               <div className={`absolute w-48 h-48 md:w-64 md:h-64 ${currentMonster.aura} blur-[40px] md:blur-[60px] rounded-full animate-pulse opacity-50`} />
-              <img src={currentMonster.url} alt={currentMonster.name} className="relative z-10 w-40 h-40 md:w-64 md:h-64 object-contain drop-shadow-[0_0_20px_rgba(0,0,0,0.5)]" />
+              <img
+                src={currentMonster.url}
+                alt={currentMonster.name}
+                className="relative z-10 w-40 h-40 md:w-64 md:h-64 object-contain drop-shadow-[0_0_20px_rgba(0,0,0,0.5)]"
+              />
             </motion.div>
           </AnimatePresence>
         </div>
